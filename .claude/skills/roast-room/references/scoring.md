@@ -44,6 +44,8 @@ Round 3's FINAL SCORE is each seat's support for the draft resolution as written
 
 One column per seat: its final PILLAR SCORE, which is that seat's judgment of the recommended option on its own pillar alone. Any pillar at 4 or below gets a named fix in "What to do next", even when the verdict is GO.
 
+Each seat's dimension label is its `dimension` field in `roster.json`. The seven that ship:
+
 | Pillar | Dimension label |
 |---|---|
 | Strategy and decisions (Bezos) | Strategic fit and reversibility |

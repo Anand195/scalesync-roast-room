@@ -47,30 +47,61 @@ const GUIDE = `
     <div class="guide-sec">
       <h4>Good to know</h4>
       <ul>
-        <li><span><b>Full council:</b> 7 advisors, 3 rounds. For big calls that are hard to undo.</span></li>
+        <li><span><b>Full council:</b> your default board (the 7 advisors out of the box), 3 rounds. For big calls that are hard to undo.</span></li>
         <li><span><b>Quick:</b> add <code>--quick</code> for 4 advisors and 2 rounds. Uses far less of your plan.</span></li>
         <li><span><b>Every council is saved.</b> Open Past sessions to replay one or download its PDF.</span></li>
+        <li><span><b>Add an advisor:</b> type <code>/newroaster</code> and a name. Change who sits at the table with <code>/roast-room board</code>.</span></li>
       </ul>
     </div>
   </div>`;
 
 const SHAPES = ["base", "open", "mid", "blink"];
-const portrait = (key, shape = "base") => `/portraits/${key}-${shape}.webp`;
+// A seat's cartoon frames live in /portraits/<key>-<shape>.webp (or .png, .jpg). A seat added with /newroaster
+// may have only a base frame, or none: missing frames fall back to the base frame, then to a
+// drawn bust in the seat's color whose mouth and eyes still move.
+const portrait = (key, shape = "base") => {
+  const have = state.byKey[key]?.portraits || {};
+  return have[shape] || have.base || drawnBust(key, shape);
+};
+const bustCache = new Map();
+function drawnBust(key, shape) {
+  const id = `${key}-${shape}`;
+  if (bustCache.has(id)) return bustCache.get(id);
+  const s = state.byKey[key] || {};
+  const c = /^#[0-9a-f]{6}$/i.test(s.color || "") ? s.color : "#37bdf8";
+  const initials = esc((s.initials || s.short || key).slice(0, 3).toUpperCase());
+  const eyes = shape === "blink"
+    ? `<path d="M226 250h30M304 250h30" stroke="#1d2733" stroke-width="7" stroke-linecap="round"/>`
+    : `<circle cx="241" cy="250" r="11" fill="#1d2733"/><circle cx="319" cy="250" r="11" fill="#1d2733"/><circle cx="245" cy="246" r="3.5" fill="#fff"/><circle cx="323" cy="246" r="3.5" fill="#fff"/>`;
+  const mouth = shape === "open" ? `<ellipse cx="280" cy="318" rx="24" ry="17" fill="#5a2430"/>`
+    : shape === "mid" ? `<ellipse cx="280" cy="316" rx="20" ry="8" fill="#5a2430"/>`
+    : `<path d="M256 312q24 16 48 0" fill="none" stroke="#5a2430" stroke-width="7" stroke-linecap="round"/>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 560"><g transform="translate(-14 -64) scale(1.05)">
+    <path d="M70 640c0-160 86-250 210-250s210 90 210 250z" fill="${c}"/>
+    <path d="M232 384h96l-48 58z" fill="#e9eef3"/>
+    <rect x="248" y="330" width="64" height="70" rx="22" fill="#d9b49a"/>
+    <ellipse cx="280" cy="250" rx="112" ry="128" fill="#e8c4a8"/>
+    <path d="M168 236c0-90 50-122 112-122s112 32 112 122c-20-46-60-64-112-64s-92 18-112 64z" fill="#3a4654"/>
+    ${eyes}${mouth}
+    <text x="280" y="540" text-anchor="middle" font-family="Montserrat, Arial, sans-serif" font-weight="800" font-size="54" fill="rgba(255,255,255,.92)">${initials}</text>
+  </g></svg>`;
+  const url = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+  bustCache.set(id, url);
+  return url;
+}
 const ROUND_NAME = ["", "Opening", "Debate", "Vote"];
 
 const state = {
-  seats: [], byKey: {}, session: null, options: [], weights: {}, active: [], round: 0,
+  seats: [], byKey: {}, board: [], table: [], session: null, options: [], weights: {}, active: [], round: 0,
   cards: { 1: {}, 2: {}, 3: {} }, replaying: false, verdict: null, links: [], geo: {}, setup: null, wait: null,
 };
 
 // ------------------------------------------------------------- boot
 async function boot() {
-  const r = await fetch("/api/seats").then((x) => x.json());
-  state.seats = r.seats;
-  state.byKey = Object.fromEntries(r.seats.map((s) => [s.key, s]));
+  const r = await refreshSeats();
   state.runner = r.runner;
   if (r.runner === "api" && !r.hasKey) toast("No ANTHROPIC_API_KEY found in .env. Add it and restart the server.");
-  renderSeats();
+  renderSeats(state.board);
   renderSamples();
   bindUI();
   new ResizeObserver(() => { layoutStage(); drawLinks(); }).observe($("#stage"));
@@ -84,6 +115,17 @@ async function boot() {
   refreshUsage();
   setInterval(watchForLive, 2500);
   setInterval(tickWait, 1000);
+}
+
+// The roster (every seat, plus the default board) comes from the skill's roster.json.
+async function refreshSeats() {
+  const r = await fetch("/api/seats").then((x) => x.json());
+  state.seats = r.seats;
+  state.byKey = Object.fromEntries(r.seats.map((s) => [s.key, s]));
+  state.board = (r.board?.default || []).filter((k) => state.byKey[k]);
+  if (!state.board.length) state.board = r.seats.slice(0, 7).map((s) => s.key);
+  bustCache.clear();
+  return r;
 }
 
 // a council started in Claude Code shows up here on its own
@@ -116,19 +158,28 @@ function renderSamples() {
   });
 }
 
-function renderSeats() {
-  $("#seats").innerHTML = state.seats.map((s, i) => `
+const MAX_TABLE = 9; // the most busts the table can seat and still read
+
+/** Seat these keys at the table (roster order). Does nothing when they are already seated. */
+function renderSeats(keys) {
+  const order = state.seats.map((s) => s.key);
+  const want = order.filter((k) => keys.includes(k)).slice(0, MAX_TABLE);
+  if (want.join() === state.table.join() && $("#seats").children.length) return;
+  state.table = want;
+  const seats = want.map((k) => state.byKey[k]);
+  $("#seats").innerHTML = seats.map((s, i) => `
     <div class="seat" id="seat-${s.key}" data-seat="${s.key}" style="--d:-${(i * 1.7) % 6}s" tabindex="0" role="button" aria-label="${esc(s.name)}, ${esc(s.pillar)}. Open card.">
       <div class="think" aria-hidden="true"><i></i><i></i><i></i></div>
       <div class="bust" data-shape="base">${SHAPES.map((sh) => `<img class="${sh}" src="${portrait(s.key, sh)}" alt="" draggable="false">`).join("")}</div>
     </div>`).join("");
-  $("#plates").innerHTML = state.seats.map((s) => `
+  $("#plates").innerHTML = seats.map((s) => `
     <div class="nameplate" id="plate-${s.key}" data-seat="${s.key}">
       <b>${esc(s.short === "Gary V" ? "Gary V" : s.name)}</b>
       <small>${esc(s.pillar)}</small>
       <div class="meta"><span class="pips" title="Weight on this decision"></span><span class="chip" hidden></span><span class="score" hidden></span></div>
     </div>`).join("");
   layoutStage();
+  startBlinking();
 }
 
 // The table is an ellipse seen from the front. Seats sit along its far edge: the
@@ -142,11 +193,16 @@ function layoutStage() {
   const t = $("#table");
   Object.assign(t.style, { left: `${cx - rx}px`, top: `${cy - ry}px`, width: `${rx * 2}px`, height: `${ry * 2}px` });
   const edge = (x) => cy - ry * Math.sqrt(Math.max(0, 1 - ((x - cx) / rx) ** 2));
-  const xs = [0.085, 0.222, 0.361, 0.5, 0.639, 0.778, 0.915];
-  state.seats.forEach((s, i) => {
+  // seats spread evenly along the far edge; past seven they shrink to fit
+  const n = state.table.length;
+  const xs = n === 1 ? [0.5] : state.table.map((_, i) => 0.085 + (0.83 * i) / (n - 1));
+  const fit = Math.min(1, 6 / Math.max(1, n - 1));
+  state.geo = {};
+  state.table.forEach((k, i) => {
+    const s = state.byKey[k];
     const x = W * xs[i];
     const d = ((x - cx) / rx) ** 2;
-    const size = H * (narrow ? 0.5 + 0.08 * d : 0.37 + 0.07 * d);
+    const size = H * (narrow ? 0.5 + 0.08 * d : 0.37 + 0.07 * d) * fit;
     const bottom = edge(x) + size * 0.2;
     const el = $(`#seat-${s.key}`);
     Object.assign(el.style, { left: `${x - size / 2}px`, top: `${bottom - size}px`, width: `${size}px`, height: `${size}px`, zIndex: 10 + Math.round(d * 10) });
@@ -161,7 +217,7 @@ function layoutStage() {
   } else {
     stage.style.paddingTop = "";
     // the captions start below the lowest nameplate they could collide with
-    const inner = [1, 2, 3, 4, 5].map((i) => $(`#plate-${state.seats[i].key}`));
+    const inner = (n > 2 ? state.table.slice(1, -1) : state.table).map((k) => $(`#plate-${k}`));
     const top = Math.max(...inner.map((p) => p.offsetTop + p.offsetHeight / 2)) + H * 0.035;
     Object.assign(c.style, { left: `${W * 0.2}px`, width: `${W * 0.6}px`, top: `${top}px`, height: `${H - top - H * 0.09}px` });
   }
@@ -268,6 +324,7 @@ function reset() {
   $("#panelHead").textContent = "Getting started";
   $("#feed").innerHTML = GUIDE;
   $$(".vote").forEach((b) => b.remove());
+  renderSeats(state.board);
   $$(".seat").forEach((el) => { el.classList.remove("absent", "speaking", "thinking", "addressed"); $(".bust", el).dataset.shape = "base"; });
   $$(".nameplate").forEach((el) => { el.classList.remove("absent", "speaking"); $(".chip", el).hidden = true; $(".score", el).hidden = true; $(".pips", el).innerHTML = ""; });
   $("#spot").classList.remove("on");
@@ -329,7 +386,7 @@ async function handle(ev) {
       }
       break;
     }
-    case "setup": state.setup = ev; onSetup(ev); await player.sleep(1800); break;
+    case "setup": state.setup = ev; await onSetup(ev); await player.sleep(1800); break;
     case "round_start": onRoundStart(ev.round); break;
     case "seat_start": $(`#seat-${ev.seat}`)?.classList.add("thinking"); break;
     case "seat_done": await onSeatDone(ev); break;
@@ -341,7 +398,11 @@ async function handle(ev) {
   }
 }
 
-function onSetup(ev) {
+async function onSetup(ev) {
+  if (ev.seats.some((k) => !state.byKey[k])) await refreshSeats(); // a seat added since the page loaded
+  // seat the default board plus anyone this council called in; past the table's limit, only this council
+  const both = [...new Set([...state.board, ...ev.seats])];
+  renderSeats(both.length <= MAX_TABLE ? both : ev.seats);
   state.options = ev.options;
   state.weights = ev.weights;
   state.active = ev.seats;
@@ -350,7 +411,7 @@ function onSetup(ev) {
   typeIn($("#topicTitle"));
   $("#options").innerHTML = ev.options.map((o) => `
     <div class="opt" data-opt="${o.id}"><span class="id">${o.id}</span><span class="label">${esc(o.label)}</span><span class="val">-</span><span class="bar"><i></i></span></div>`).join("");
-  for (const s of state.seats) {
+  for (const s of state.table.map((k) => state.byKey[k])) {
     const absent = !ev.seats.includes(s.key);
     $(`#seat-${s.key}`).classList.toggle("absent", absent);
     const pl = $(`#plate-${s.key}`);
@@ -478,6 +539,7 @@ async function speak(key, text, { tag = "", target = null, sub = "" } = {}) {
 }
 
 // idle blinking for everyone, so the room feels alive between lines
+const blinking = new Set();
 function startBlinking() {
   const blink = (key) => {
     const b = $(`#seat-${key} .bust`);
@@ -487,7 +549,7 @@ function startBlinking() {
     }
     setTimeout(() => blink(key), 2400 + Math.random() * 4200);
   };
-  state.seats.forEach((s, i) => setTimeout(() => blink(s.key), 600 + i * 530));
+  state.table.filter((k) => !blinking.has(k)).forEach((k, i) => { blinking.add(k); setTimeout(() => blink(k), 600 + i * 530); });
 }
 
 async function onSeatDone(ev) {
@@ -773,7 +835,7 @@ function tickWait() {
   const bar = $("#wcBar").parentElement;
   const muse = $("#wcMuse");
   if (round) {
-    const seats = state.active.length ? state.active : state.seats.map((s) => s.key);
+    const seats = state.active.length ? state.active : state.table;
     const done = seats.filter((k) => state.cards[round][k]).length;
     bar.classList.toggle("indeterminate", done === 0);
     $("#wcBar").style.width = done ? Math.round((done / seats.length) * 100) + "%" : "";

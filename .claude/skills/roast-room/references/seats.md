@@ -1,5 +1,7 @@
 # Seats
 
+`roster.json` (one folder up) is the source of truth: every seat, its key, pillar, question, and scorecard dimension, plus the default board and how the board is picked. The seven seats that ship with the Roast Room:
+
 | Seat | Agent | Pillar | Owns the question | Brain |
 |---|---|---|---|---|
 | Bezos | `council-bezos` | Strategy and decisions | Is this the right bet, and how reversible is it? | `brains/jeff-bezos/` |
@@ -10,7 +12,7 @@
 | Wickman | `council-wickman` | Operations and scaling | Can the business run this without the founder holding it together? | `brains/gino-wickman/` |
 | Buffett | `council-buffett` | Money and capital | What does it do to cash, risk, and long-term value? | `brains/warren-buffett/` |
 
-Brain paths are relative to `.claude/skills/roast-room/`.
+Brain paths are relative to `.claude/skills/roast-room/`. Seats added with `/newroaster` follow the same pattern: `council-<key>` and `brains/<slug>/`, listed in `roster.json`.
 
 ## Relevance weights
 
@@ -26,7 +28,7 @@ Every seat is at least 1. Exactly one or two seats get a 3.
 
 ## Quick council
 
-`--quick` seats four: the two highest-weight seats, Buffett or Bezos (whichever is not already in, as the downside check), and the seat most likely to disagree with the others (the Chair names why). Use quick for reversible, low-stakes calls. Full council for anything a founder cannot easily undo.
+`--quick` seats four from the board: the two highest-weight seats, the seat that guards the downside (Buffett or Bezos out of the box; otherwise the board's money, capital, or risk seat), and the seat most likely to disagree with the others (the Chair names why). Use quick for reversible, low-stakes calls. Full council for anything a founder cannot easily undo.
 
 ## Natural tensions to expect
 
@@ -34,5 +36,7 @@ Every seat is at least 1. Exactly one or two seats get a 3.
 - Graham (do things that don't scale, stay close to users) against Wickman (systems, process, accountability).
 - Buffett (stay in your circle, avoid leverage) against Gary V (bet on the underpriced platform now).
 - Martell (buy back your time, hire early) against Graham and Buffett (stay small and frugal until it works).
+
+Seats added with `/newroaster` append their own tension lines here.
 
 If Round 1 comes back unanimous, the Chair should be suspicious and press the seat whose pillar is most at risk in Round 2.

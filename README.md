@@ -2,7 +2,7 @@
 
 ![The Roast Room](docs/room.jpg)
 
-Bring a hard business decision and seven AI advisors argue it out, then hand you a scored verdict and a one-click PDF. The seats are Jeff Bezos, Paul Graham, Alex Hormozi, Gary Vaynerchuk, Dan Martell, Gino Wickman, and Warren Buffett, each built from that person's public work: their letters, essays, talks, and videos. The council runs in Claude Code, and a small local web app shows them around a table talking it through.
+Bring a hard business decision and seven AI advisors argue it out, then hand you a scored verdict and a one-click PDF. The seats are Jeff Bezos, Paul Graham, Alex Hormozi, Gary Vaynerchuk, Dan Martell, Gino Wickman, and Warren Buffett, each built from that person's public work: their letters, essays, talks, and videos. The council runs in Claude Code, and a small local web app shows them around a table talking it through. Want someone else at the table? Type `/newroaster` and a name, and Claude builds that advisor the same way.
 
 | Seat | Pillar | The question they own |
 |---|---|---|
@@ -63,8 +63,64 @@ More ways to run it:
 - `/roast-room --quick ...` seats four advisors for two rounds. Use it for smaller, reversible calls. It uses far less of your plan.
 - `/roast-room --seats hormozi,buffett ...` seats only the advisors you name.
 - `/roast-room ask hormozi ...` gets one answer from one seat.
+- `/roast-room --all ...` seats every advisor you have (up to nine).
+- `/roast-room board` shows who sits at the table by default and lets you change it.
 
 The room is optional. The council runs the same in Claude Code without it.
+
+## Choose who sits at the table
+
+Out of the box, every council seats the same seven advisors: your **default board**. It lives in `.claude/skills/roast-room/roster.json`:
+
+```json
+{
+  "board": "default",
+  "default": ["bezos", "graham", "hormozi", "garyvee", "martell", "wickman", "buffett"],
+  "seats": [ ...every advisor you have... ]
+}
+```
+
+`"board"` decides how each council picks its seats:
+
+| Setting | What happens on every `/roast-room` |
+|---|---|
+| `"default"` (out of the box) | The default board sits. No questions. |
+| `"ask"` | The Chair shows your advisors and asks: keep the default board, let the Chair pick, or name the seats. |
+| `"auto"` | The Chair picks the best seats for this decision from everyone you have (up to seven, always including a money or risk seat) and tells you who and why. |
+
+You don't need to edit the file by hand. Type `/roast-room board` and say what you want: "put Naval on my default board", "take Gary V off", or "ask me every time".
+
+One run can always override the board: `--seats hormozi,naval,buffett` seats exactly those advisors, `--all` seats everyone, and `--quick` picks four from whoever is seated. A table holds up to nine.
+
+## Add your own advisor
+
+```
+/newroaster Naval Ravikant
+```
+
+Claude builds a new seat the way the original seven were built:
+
+1. **Asks two or three questions**: the business pillar and question the advisor owns (it suggests one), whether they join your default board, and how deep to go.
+2. **Finds their public work**: essays, letters, talks, long interviews, and podcasts where they are the main speaker.
+3. **Fetches it** into `build/<name>/`, a local folder git ignores. Web pages become text and YouTube videos become transcripts.
+4. **Extracts how they think**: parallel sub-agents read every source and pull out their frameworks, rules, positions, stories, and voice, with verbatim quotes.
+5. **Writes the brain** (`.claude/skills/roast-room/brains/<name>/`) and checks that every quote is word for word in the source it cites.
+6. **Writes the advisor's agent** (`.claude/agents/council-<name>.md`) and adds them to `roster.json`.
+7. **Tests the new seat** on a sample question, then tells you how to use it.
+
+| Depth | Sources | Good for |
+|---|---|---|
+| `--quick` | 12 to 20 | Trying someone out |
+| default | 30 to 50 | An advisor you'll use |
+| `--deep` | 80+ | Matching the original seven |
+
+A standard build is about 8 to 10 sub-agent runs, so it uses a real share of your plan. When it finishes, open a new Claude Code session so the advisor loads as its own agent (the council works before that too). Then use them like anyone else: `/roast-room ask naval ...`, `/roast-room --seats naval,buffett,hormozi ...`, or put them on your default board.
+
+You can build an advisor from public figures, living or historical, with a real body of public work, or from your own material (your posts, transcripts, notes) if you want yourself or a consenting mentor on the board. The raw sources stay on your machine; only the brain, which holds short quotes and paraphrase, is meant to be committed.
+
+**Their face in the room:** a new advisor shows up as a simple cartoon bust in their color, and their mouth moves when they talk. For a real portrait, save a square image with a transparent background as `app/public/portraits/<name>-base.png` (`.webp` and `.jpg` work too). Add `-open`, `-mid`, and `-blink` versions of the same image for a talking animation.
+
+YouTube transcripts work best with [yt-dlp](https://github.com/yt-dlp/yt-dlp) installed, and PDFs need `pdftotext` ([Poppler](https://poppler.freedesktop.org)). Both are optional: without them, Claude falls back to YouTube's own captions and reads PDFs itself.
 
 ## Watch an example first
 
@@ -72,11 +128,11 @@ Run `npm start`, open http://localhost:4730, and click **Past sessions**. Three 
 
 ## How it works
 
-- **The council runs in Claude Code.** Each seat is a sub-agent (`.claude/agents/council-*.md`) that reads its own brain (`.claude/skills/roast-room/brains/<name>/`): frameworks, principles, positions, stories, and voice notes compiled from public sources, with every quote tied to a source. Claude Code acts as the Chair. It runs the rounds, keeps score, and writes the verdict (`.claude/skills/roast-room/SKILL.md`).
+- **The council runs in Claude Code.** Each seat is a sub-agent (`.claude/agents/council-*.md`, listed in `roster.json`) that reads its own brain (`.claude/skills/roast-room/brains/<name>/`): frameworks, principles, positions, stories, and voice notes compiled from public sources, with every quote tied to a source. Claude Code acts as the Chair. It runs the rounds, keeps score, and writes the verdict (`.claude/skills/roast-room/SKILL.md`).
 - **Each seat scores every option**, weighted by how much that seat's pillar matters to your decision. The Chair caps the verdict when a seat flags ruin risk, and it forces a real argument when everyone agrees too fast.
 - **The room only watches.** As the Chair works, it writes each step to `sessions/`, and the app plays those files back. Between rounds it shows which round is running, how long it has been, and what each advisor is weighing. The room makes no AI calls of its own.
 - **Every council is saved** in `sessions/`. Past sessions replays any of them and downloads its PDF.
-- **Usage:** a full council is 21 sub-agent runs, so it takes a real bite out of your plan's usage. Use `--quick` for small calls.
+- **Usage:** a full council is three sub-agent runs per seat (21 for seven), so it takes a real bite out of your plan's usage. Use `--quick` for small calls.
 
 ## Optional: let the room run councils itself
 
@@ -86,13 +142,16 @@ If you'd rather type a decision straight into the room, copy `.env.example` to `
 
 | Path | What |
 |---|---|
-| `.claude/skills/roast-room/` | The skill: protocol, prompts, scoring, report template, and the seven brains |
-| `.claude/agents/` | The seven seat agents |
+| `.claude/skills/roast-room/` | The council skill: protocol, prompts, scoring, report template, and one brain per advisor |
+| `.claude/skills/roast-room/roster.json` | Every advisor, your default board, and how the board is picked |
+| `.claude/skills/newroaster/` | The `/newroaster` skill and its scripts: fetch sources, check quotes, register a seat |
+| `.claude/agents/` | One agent per advisor (`council-<name>.md`) |
 | `app/` | The room: a zero-dependency Node server, the web page, and the PDF builder |
 | `sessions/` | Your councils (kept out of git) and the three examples |
+| `build/` | Raw sources `/newroaster` fetched (kept out of git) |
 
 ## About the advisors
 
-These are simulations built from each person's public work. They are not the people, they don't speak for them, and none of them is affiliated with or endorses this project. A seat only quotes a person verbatim when the line is in its brain with a source, and `python .claude/skills/roast-room/scripts/check_quotes.py sessions/<session>` checks every quote in a council against the brains. Each brain's `sources.md` lists what it was built from.
+These are simulations built from each person's public work, and so is any advisor you add. They are not the people, they don't speak for them, and none of them is affiliated with or endorses this project. A seat only quotes a person verbatim when the line is in its brain with a source, and `python .claude/skills/roast-room/scripts/check_quotes.py sessions/<session>` checks every quote in a council against the brains. Each brain's `sources.md` lists what it was built from.
 
 Built by AI Automation Society. The code is MIT licensed; see `LICENSE`. The PDF builder bundles [jsPDF](https://github.com/parallax/jsPDF) (MIT) and [Montserrat](https://github.com/JulietaUla/Montserrat) (SIL Open Font License); their licenses sit next to them in `app/public/`.

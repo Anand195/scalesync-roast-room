@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { SEATS, byKey, systemFor, parseCard, checkQuotes } from "./seats.mjs";
+import { byKey, systemFor, parseCard, checkQuotes, defaultBoard } from "./seats.mjs";
 import * as ai from "./anthropic.mjs";
 import { S } from "./anthropic.mjs";
 import { SESSIONS_DIR } from "./env.mjs";
@@ -10,8 +10,12 @@ export const MODELS = {
   chair: process.env.CHAIR_MODEL || "claude-opus-5-5",
 };
 
-const CHAIR_SYSTEM = `You are the Chair of a Roast Room council: seven simulated advisors built from the public work of Jeff Bezos (strategy and decisions), Paul Graham (product and startups), Alex Hormozi (offers, pricing, and sales), Gary Vaynerchuk (marketing and attention), Dan Martell (people, hiring, and founder time), Gino Wickman (operations and scaling), and Warren Buffett (money and capital).
-You never argue a side and never add your own pillar. You run the room, keep score, and write in plain English: short sentences, no em dashes, no hype, no tee-ups like "here's the thing", no filler. Seat keys (for key fields only): bezos, graham, hormozi, garyvee, martell, wickman, buffett. Whenever you write a seat's name in prose or in a seat field, use its display name: Bezos, Graham, Hormozi, Gary V, Martell, Wickman, Buffett.`;
+// The board comes from the roster: the saved default board, or every seat it lists.
+const chairSystem = (st) => {
+  const seats = st.board.map((k) => byKey[k]);
+  return `You are the Chair of a Roast Room council: ${seats.length} simulated advisors built from the public work of ${seats.map((x) => `${x.name} (${x.pillar.toLowerCase()})`).join(", ")}.
+You never argue a side and never add your own pillar. You run the room, keep score, and write in plain English: short sentences, no em dashes, no hype, no tee-ups like "here's the thing", no filler. Seat keys (for key fields only): ${seats.map((x) => x.key).join(", ")}. Whenever you write a seat's name in prose or in a seat field, use its display name: ${seats.map((x) => x.short).join(", ")}.`;
+};
 
 export const DISCLAIMER = "Simulated advisors built from each person's public work. They are not the people and do not speak for them.";
 
@@ -187,11 +191,11 @@ async function chairSetup(st) {
     brief: S.str,
     options: S.arr(S.obj({ id: S.enum("A", "B", "C", "D"), label: S.str })),
     assumptions: S.arr(S.str),
-    weights: S.arr(S.obj({ seat: S.enum(...SEATS.map((s) => s.key)), weight: S.int, reason: S.str })),
-    quick_seats: S.arr(S.enum(...SEATS.map((s) => s.key))),
+    weights: S.arr(S.obj({ seat: S.enum(...st.board), weight: S.int, reason: S.str })),
+    quick_seats: S.arr(S.enum(...st.board)),
   });
   return ai.json({
-    model: MODELS.chair, system: CHAIR_SYSTEM, schema, maxTokens: 3000,
+    model: MODELS.chair, system: chairSystem(st), schema, maxTokens: 3000,
     prompt: `A founder brought this to the council:
 
 """${st.prompt}"""
@@ -203,19 +207,19 @@ Set up the room.
 - brief: under 200 words covering the business, resources, what success looks like, and the founder's lean, using only what the founder said. Do not invent facts.
 - assumptions: any number or fact you had to assume to make the brief usable, each one line. Keep it to what matters.
 - weights: one entry for every seat, weight 1 to 3 (3 = the decision lives in this pillar, 2 = materially affected, 1 = touched at the edges). Exactly one or two seats at 3. Reason in one line.
-- quick_seats: the four seats for a quick council: the two highest-weight seats, Buffett or Bezos as the downside check (whichever is not already in), and the seat most likely to disagree with the others.`,
+- quick_seats: the four seats for a quick council: the two highest-weight seats, the seat that guards the downside (money, capital, or risk) if it is not already in, and the seat most likely to disagree with the others.`,
   });
 }
 
 async function chairCruxes(st) {
   const schema = S.obj({
-    cruxes: S.arr(S.obj({ question: S.str, sides: S.arr(S.obj({ position: S.str, seats: S.arr(S.enum(...SEATS.map((s) => s.key))) })) })),
+    cruxes: S.arr(S.obj({ question: S.str, sides: S.arr(S.obj({ position: S.str, seats: S.arr(S.enum(...st.board)) })) })),
     unanimous: S.bool,
     note: S.str,
-    pressure: S.arr(S.obj({ seat: S.enum(...SEATS.map((s) => s.key)), ask: S.str })),
+    pressure: S.arr(S.obj({ seat: S.enum(...st.board), ask: S.str })),
   });
   return ai.json({
-    model: MODELS.chair, system: CHAIR_SYSTEM, schema, maxTokens: 3000,
+    model: MODELS.chair, system: chairSystem(st), schema, maxTokens: 3000,
     prompt: `${briefBlock(st)}
 
 ROUND 1 CARDS
@@ -239,7 +243,7 @@ async function chairDraft(st, interim) {
     kill_criteria: S.str,
   });
   return ai.json({
-    model: MODELS.chair, system: CHAIR_SYSTEM, schema, maxTokens: 3000,
+    model: MODELS.chair, system: chairSystem(st), schema, maxTokens: 3000,
     prompt: `${briefBlock(st)}
 
 ROUND 2 CARDS (the debate)
@@ -269,7 +273,7 @@ async function chairVerdict(st, finalScores, recommended) {
     revisit: S.str,
   });
   return ai.json({
-    model: MODELS.chair, system: CHAIR_SYSTEM, schema, maxTokens: 5000,
+    model: MODELS.chair, system: chairSystem(st), schema, maxTokens: 5000,
     prompt: `${briefBlock(st)}
 
 CRUXES: ${JSON.stringify(st.cruxes)}
@@ -336,18 +340,18 @@ export function startCouncil(prompt, mode = "full") {
 }
 
 async function run(s) {
-  const st = (s.state = { prompt: s.prompt, mode: s.mode, cards: { 1: {}, 2: {}, 3: {} }, scores: {}, rounds: [] });
+  const st = (s.state = { prompt: s.prompt, mode: s.mode, board: defaultBoard(), cards: { 1: {}, 2: {}, 3: {} }, scores: {}, rounds: [] });
   emit(s, "phase", { phase: "setup", label: "The Chair is reading your question" });
   const setup = await chairSetup(st);
   Object.assign(st, {
     title: setup.title, decision: setup.decision, brief: setup.brief,
     options: setup.options, assumptions: setup.assumptions,
-    weights: Object.fromEntries(SEATS.map((x) => [x.key, { weight: 1, reason: "" }])),
+    weights: Object.fromEntries(st.board.map((k) => [k, { weight: 1, reason: "" }])),
   });
-  for (const w of setup.weights) st.weights[w.seat] = { weight: Math.max(1, Math.min(3, w.weight)), reason: w.reason };
-  st.seats = s.mode === "quick" ? [...new Set(setup.quick_seats)].slice(0, 4) : SEATS.map((x) => x.key);
+  for (const w of setup.weights) if (st.weights[w.seat]) st.weights[w.seat] = { weight: Math.max(1, Math.min(3, w.weight)), reason: w.reason };
+  st.seats = s.mode === "quick" ? [...new Set(setup.quick_seats)].filter((k) => st.board.includes(k)).slice(0, 4) : st.board.slice();
   if (s.mode === "quick" && st.seats.length < 4) {
-    for (const x of SEATS) if (st.seats.length < 4 && !st.seats.includes(x.key)) st.seats.push(x.key);
+    for (const k of st.board) if (st.seats.length < 4 && !st.seats.includes(k)) st.seats.push(k);
   }
   emit(s, "setup", { title: st.title, decision: st.decision, brief: st.brief, options: st.options, assumptions: st.assumptions, weights: st.weights, seats: st.seats, mode: s.mode });
 
@@ -432,7 +436,7 @@ export function save(s) {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, "events.json"), JSON.stringify({ id: s.id, prompt: s.prompt, mode: s.mode, status: s.status, title: st.title, events: s.events }, null, 1));
     if (st.options) {
-      const lines = [`# ${st.title}`, "", `Asked: ${s.prompt}`, "", st.brief, "", "Options:", ...st.options.map((o) => `- ${o.id}: ${o.label}`), "", "Assumptions:", ...(st.assumptions || []).map((a) => `- ${a}`), "", "| Seat | Weight | Reason |", "|---|---|---|", ...SEATS.map((x) => `| ${x.short} | ${st.weights[x.key].weight} | ${st.weights[x.key].reason} |`)];
+      const lines = [`# ${st.title}`, "", `Asked: ${s.prompt}`, "", st.brief, "", "Options:", ...st.options.map((o) => `- ${o.id}: ${o.label}`), "", "Assumptions:", ...(st.assumptions || []).map((a) => `- ${a}`), "", "| Seat | Weight | Reason |", "|---|---|---|", ...st.seats.map((k) => `| ${byKey[k].short} | ${st.weights[k].weight} | ${st.weights[k].reason} |`)];
       fs.writeFileSync(path.join(dir, "brief.md"), lines.join("\n") + "\n");
     }
     for (const r of st.rounds || []) {

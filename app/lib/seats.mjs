@@ -1,17 +1,33 @@
 import fs from "node:fs";
 import path from "node:path";
-import { AGENTS_DIR, BRAINS_DIR } from "./env.mjs";
+import { AGENTS_DIR, BRAINS_DIR, ROSTER } from "./env.mjs";
 
-export const SEATS = [
-  { key: "bezos", name: "Jeff Bezos", short: "Bezos", initials: "JB", slug: "jeff-bezos", pillar: "Strategy and decisions", question: "Is this the right bet, and how reversible is it?", dimension: "Strategic fit and reversibility", color: "#e8a33d" },
-  { key: "graham", name: "Paul Graham", short: "Graham", initials: "PG", slug: "paul-graham", pillar: "Product and startups", question: "Is this something people actually want, and is it growing?", dimension: "Real demand and growth", color: "#f06b3f" },
-  { key: "hormozi", name: "Alex Hormozi", short: "Hormozi", initials: "AH", slug: "alex-hormozi", pillar: "Offers, pricing, and sales", question: "Will people pay, how much, and how do we close?", dimension: "Offer strength and unit economics", color: "#d94a6a" },
-  { key: "garyvee", name: "Gary Vaynerchuk", short: "Gary V", initials: "GV", slug: "gary-vaynerchuk", pillar: "Marketing and attention", question: "Where does the attention come from, and is it underpriced?", dimension: "Attention and distribution", color: "#9b5de5" },
-  { key: "martell", name: "Dan Martell", short: "Martell", initials: "DM", slug: "dan-martell", pillar: "People, hiring, and founder time", question: "Who does this, and what does it cost the founder's calendar?", dimension: "Team capacity and founder time", color: "#3d8bfd" },
-  { key: "wickman", name: "Gino Wickman", short: "Wickman", initials: "GW", slug: "gino-wickman", pillar: "Operations and scaling", question: "Can the business run this without the founder holding it together?", dimension: "Operational readiness", color: "#1fa67a" },
-  { key: "buffett", name: "Warren Buffett", short: "Buffett", initials: "WB", slug: "warren-buffett", pillar: "Money and capital", question: "What does it do to cash, risk, and long-term value?", dimension: "Downside and capital efficiency", color: "#4c6a92" },
-];
-export const byKey = Object.fromEntries(SEATS.map((s) => [s.key, s]));
+// Every seat lives in the skill's roster.json (the /newroaster skill adds to it). SEATS and
+// byKey are filled in place, so a seat added while the room is running shows up on the next
+// read without a restart.
+export const SEATS = [];
+export const byKey = {};
+export const BOARD = { mode: "default", default: [] };
+let rosterStamp = 0;
+export function loadRoster() {
+  let stat;
+  try { stat = fs.statSync(ROSTER); } catch { throw new Error(`roster not found at ${ROSTER}`); }
+  if (stat.mtimeMs === rosterStamp && SEATS.length) return SEATS;
+  const r = JSON.parse(fs.readFileSync(ROSTER, "utf8"));
+  const seats = (r.seats || []).filter((s) => s.key && s.slug && fs.existsSync(path.join(AGENTS_DIR, `council-${s.key}.md`)));
+  SEATS.splice(0, SEATS.length, ...seats);
+  for (const k of Object.keys(byKey)) delete byKey[k];
+  for (const s of SEATS) byKey[s.key] = s;
+  BOARD.mode = ["default", "ask", "auto"].includes(r.board) ? r.board : "default";
+  const def = (r.default || []).filter((k) => byKey[k]);
+  BOARD.default = def.length ? def : SEATS.slice(0, 7).map((s) => s.key);
+  rosterStamp = stat.mtimeMs;
+  for (const k of [...systemCache.keys()]) if (!byKey[k]) systemCache.delete(k);
+  brainText.clear();
+  return SEATS;
+}
+/** The seats at the table when no one picked: the saved default board. */
+export const defaultBoard = () => (loadRoster(), BOARD.default.slice());
 
 const read = (p) => (fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "");
 const stripFront = (t) => t.replace(/^---[\s\S]*?\n---\n/, "");
@@ -109,3 +125,5 @@ export function parseCard(text, optionIds) {
     thisWeek: field(text, "WHAT I'D DO THIS WEEK"),
   };
 }
+
+loadRoster();

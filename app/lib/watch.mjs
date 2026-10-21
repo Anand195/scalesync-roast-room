@@ -8,7 +8,7 @@
 //   verdict.json  -> the verdict
 import fs from "node:fs";
 import path from "node:path";
-import { SEATS, byKey, parseCard, checkQuotes } from "./seats.mjs";
+import { SEATS, byKey, parseCard, checkQuotes, loadRoster, defaultBoard } from "./seats.mjs";
 import { SESSIONS_DIR } from "./env.mjs";
 import { optionScores, finalNumbers, verdictSeats, DISCLAIMER } from "./council.mjs";
 
@@ -62,6 +62,7 @@ function finish(x, status) {
 
 function normalizeSetup(c) {
   const options = (c.options || []).map((o, i) => (typeof o === "string" ? { id: "ABCD"[i], label: o } : { id: String(o.id || "ABCD"[i]).toUpperCase(), label: o.label || o.text || "" }));
+  loadRoster(); // pick up a seat added since the room started
   const weights = Object.fromEntries(SEATS.map((s) => [s.key, { weight: 1, reason: "" }]));
   const wl = Array.isArray(c.weights) ? c.weights : Object.entries(c.weights || {}).map(([seat, w]) => (typeof w === "number" ? { seat, weight: w } : { seat, ...w }));
   for (const w of wl) { const k = seatKey(w.seat); if (k) weights[k] = { weight: Math.max(1, Math.min(3, Number(w.weight) || 1)), reason: w.reason || "" }; }
@@ -70,7 +71,7 @@ function normalizeSetup(c) {
   return {
     title: c.title || "Roast Room", decision: c.decision || "", brief: c.brief || "", mode,
     options, assumptions: c.assumptions || [], weights,
-    seats: seats.length ? [...new Set(seats)] : SEATS.map((s) => s.key),
+    seats: seats.length ? [...new Set(seats)] : defaultBoard(),
   };
 }
 
