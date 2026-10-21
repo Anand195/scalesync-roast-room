@@ -122,7 +122,8 @@ Claude builds a new seat the way the original seven were built:
 4. **Extracts how they think**: parallel sub-agents read every source and pull out their frameworks, rules, positions, stories, and voice, with verbatim quotes.
 5. **Writes the brain** (`.claude/skills/roast-room/brains/<name>/`) and checks that every quote is word for word in the source it cites.
 6. **Writes the advisor's agent** (`.claude/agents/council-<name>.md`) and adds them to `roster.json`.
-7. **Tests the new seat** on a sample question, then tells you how to use it.
+7. **Makes their portrait** for the room from a real photo, in the same cartoon style as the other advisors.
+8. **Tests the new seat** on a sample question, then tells you how to use it.
 
 | Depth | Sources | Good for |
 |---|---|---|
@@ -134,9 +135,9 @@ A standard build is about 8 to 10 sub-agent runs, so it uses a real share of you
 
 You can build an advisor from public figures, living or historical, with a real body of public work, or from your own material (your posts, transcripts, notes) if you want yourself or a consenting mentor on the board. The raw sources stay on your machine; only the brain, which holds short quotes and paraphrase, is meant to be committed.
 
-**Their face in the room:** a new advisor shows up as a simple cartoon bust in their color, and their mouth moves when they talk. For a real portrait, save a square image with a transparent background as `app/public/portraits/<name>-base.png` (`.webp` and `.jpg` work too). Add `-open`, `-mid`, and `-blink` versions of the same image for a talking animation.
+**Their face in the room:** `/newroaster` also makes the new advisor's cartoon portrait, the same way the original seven were made. It finds a real photo of the person, turns it into the same 3D cartoon style (using one of the existing cartoons as the style reference), picks the closest likeness, and makes the talking frames (mouth open, mouth "oh", and a blink). This step needs a [kie.ai](https://kie.ai/api-key) key in `.env` (`KIE_AI_API_KEY=`, about 5 image jobs per advisor) and Python with `opencv-python` (Claude installs it if it's missing). Without a key the advisor still works and shows a placeholder face; add a key later and run `/newroaster portrait <name>`.
 
-YouTube transcripts work best with [yt-dlp](https://github.com/yt-dlp/yt-dlp) installed, and PDFs need `pdftotext` ([Poppler](https://poppler.freedesktop.org)). Both are optional: without them, Claude falls back to YouTube's own captions and reads PDFs itself.
+YouTube transcripts and photos work best with [yt-dlp](https://github.com/yt-dlp/yt-dlp) installed, and PDFs need `pdftotext` ([Poppler](https://poppler.freedesktop.org)). Both are optional: without them, Claude falls back to YouTube's own captions and reads PDFs itself.
 
 ## Watch an example first
 

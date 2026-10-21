@@ -1,16 +1,17 @@
 ---
 name: newroaster
-description: Use when someone wants to add a new advisor to the Roast Room, says "/newroaster", "add a roaster", "add a seat", "add [name] to the council", "build a seat for [name]", "I want [name] on my board", or wants their own advisor (themselves, a mentor, or any public figure) built from public work. Builds the seat the same way the original seven were built. It finds and fetches the person's public sources, extracts their frameworks, rules, positions, stories, and voice with parallel sub-agents, writes the brain, checks every quote is verbatim, writes the council agent, and registers the seat in the roster (on the default board if asked). Not for running a council (that is /roast-room).
-argument-hint: "[full name] [--quick | --deep] [--pillar \"...\"] [--default]"
+description: Use when someone wants to add a new advisor to the Roast Room, says "/newroaster", "add a roaster", "add a seat", "add [name] to the council", "build a seat for [name]", "I want [name] on my board", or wants their own advisor (themselves, a mentor, or any public figure) built from public work. Builds the seat the same way the original seven were built. It finds and fetches the person's public sources, extracts their frameworks, rules, positions, stories, and voice with parallel sub-agents, writes the brain, checks every quote is verbatim, writes the council agent, makes their cartoon portrait for the room from a real photo (the same style and talking frames as the original seven), and registers the seat in the roster (on the default board if asked). Also redoes a portrait ("/newroaster portrait <name>"). Not for running a council (that is /roast-room).
+argument-hint: "[full name] [--quick | --deep] [--pillar \"...\"] [--default] | portrait <name>"
 ---
 
 ## What this does
 
-Adds one seat to the Roast Room. A seat is three things, and this skill makes all three:
+Adds one seat to the Roast Room. A seat is four things, and this skill makes all four:
 
 1. **A brain**: `.claude/skills/roast-room/brains/<slug>/`, eight files compiled from the person's public work, every quote verbatim with a source id.
 2. **An agent**: `.claude/agents/council-<key>.md`, the sub-agent that reasons and talks like them from that brain.
-3. **A roster entry**: one line in `.claude/skills/roast-room/roster.json`, so `/roast-room` and the room know the seat exists.
+3. **A portrait**: four cartoon frames in the room (`<key>-base`, `-open`, `-mid`, `-blink`), made from a real photo of the person in exactly the style of the original seven.
+4. **A roster entry**: one line in `.claude/skills/roast-room/roster.json`, so `/roast-room` and the room know the seat exists.
 
 The raw sources stay in a local build folder that git ignores. Only the brain ships.
 
@@ -124,7 +125,22 @@ It refuses if the agent file or a brain file is missing. `--default` adds the se
 
 - Add one or two "natural tension" lines for the new seat to `.claude/skills/roast-room/references/seats.md` (who they will clash with, and over what).
 
-## Step 8: Test the seat
+## Step 8: Portrait
+
+Every seat gets a real portrait. Never leave a new seat on the drawn placeholder bust and never draw a real person from a written description alone: the likeness comes from a photo. This is the same pipeline the original seven went through, with the same prompts and the same style reference (`assets/style-reference.jpg`, the Buffett cartoon). Portrait folder: `<build>/portrait/` (ignored by git). Frames folder: `app/public/portraits/`.
+
+1. **Find a photo.** One recent, clear, front-facing photo of the person alone, from an official source: their own YouTube channel avatar (`yt-dlp -J --flat-playlist --playlist-items 0 https://www.youtube.com/@handle` lists `avatar_uncropped`; swap its `=s0` for `=s900`), their own site, or their Wikipedia or Wikimedia Commons photo. Skip logos, group shots, and side profiles. For the user or a mentor built from their own material, use a photo they give you.
+2. **Save it and look at it:** `node .claude/skills/newroaster/scripts/portrait.mjs photo <build>/portrait <url>`. Open `photo.jpg` with Read and confirm it is the right person and the face is clear.
+3. **Two cartoon candidates:** `node .claude/skills/newroaster/scripts/portrait.mjs base <build>/portrait "<Full Name>. <hair, facial hair, eye color, skin, build, and the outfit they are known for>"`. Describe what the photo shows; name the signature outfit or accessory (a cap, glasses, a chain). The description steers the details; the photo carries the likeness.
+4. **Pick by likeness:** `python .claude/skills/newroaster/scripts/build_portraits.py sheet <build>/portrait`, then open `candidates.jpg` (photo first, then each candidate). Pick the one closest to the photo (face shape, eyes, hair, signature details). If neither is close, run `base` again with a sharper description (eye color and hairline are the usual misses) and `--n 2`, then pick: `portrait.mjs pick <build>/portrait <n>`.
+5. **Talking frames:** `node .claude/skills/newroaster/scripts/portrait.mjs frames <build>/portrait` (mouth open, mouth "oh", eyes closed, each an edit of the chosen base).
+6. **Build:** `python .claude/skills/newroaster/scripts/build_portraits.py build <build>/portrait <key> --out app/public/portraits`. It aligns each edit onto the base, patches only the mouth or eyes, keys the green, and crops every head to the same scale as the seven. Open `<build>/portrait/review.jpg`: four frames, same face, no green fringe, the mouth and eyes the only change. If a head sits too small or too large next to the others, rebuild with `--zoom 0.9` or `--zoom 1.1`.
+
+Needs `KIE_AI_API_KEY` (kie.ai, about 5 image jobs a seat) in `.env`, Node, and Python with `opencv-python` and `numpy` (`pip install opencv-python numpy` if the build step says they are missing). If there is no kie.ai key, finish the seat anyway (the room shows a drawn placeholder), tell the user in one line how to add a key (https://kie.ai/api-key, then `KIE_AI_API_KEY=` in `.env`), and that `/newroaster portrait <name>` makes the portrait afterward.
+
+**Portrait only** (`/newroaster portrait <name>`, or a seat that shows the placeholder): run this step alone for a seat already in `roster.json`, using its `key` and `slug`, then tell the user to reload the room.
+
+## Step 9: Test the seat
 
 New agent files load when Claude Code starts, so test with the fallback the council itself uses: spawn `general-purpose` with `Read .claude/agents/council-<key>.md and follow it as your instructions for this whole task. Only read files; do not write anything.` followed by the single-seat consult prompt from `.claude/skills/roast-room/references/round-prompts.md`, on a short sample decision in the seat's pillar. Then check its answer:
 
@@ -134,7 +150,7 @@ New agent files load when Claude Code starts, so test with the fallback the coun
 
 If it fails, fix the agent or `_hot.md` and test again, once.
 
-## Step 9: Report
+## Step 10: Report
 
 Tell the user, in under 150 words:
 
@@ -142,7 +158,7 @@ Tell the user, in under 150 words:
 - The brain: sources, words, years covered, and the files written.
 - How to use them now: `/roast-room ask <key> ...` for one answer, `/roast-room --seats <key>,buffett,... ...` to seat them, and `/roast-room board` to change the default board.
 - One line: restart Claude Code (or open a new session) so the seat loads as its own agent type; until then the council uses the fallback automatically.
-- One line: the room draws them a simple cartoon bust in their color. For a real portrait, save a square image with a transparent background as `app/public/portraits/<key>-base.png` (`.webp` or `.jpg` also work). Add `-open`, `-mid`, and `-blink` versions of the same image to make the mouth move.
+- One line: their portrait is in the room (reload the page), or, when no kie.ai key was available, that it shows a placeholder until `/newroaster portrait <name>` runs.
 
 ## Without sub-agents (Codex or a runtime that cannot spawn agents)
 
@@ -154,4 +170,5 @@ Run steps 4 and 5 yourself, one batch at a time: extract a batch into its notes 
 - Every quote in the brain is verbatim and passes `check_quotes.mjs`. A line with no source is inference and says so.
 - Do not touch the other seats' brains or agents. Only `roster.json`'s `"seats"` and `"default"` change, through `add_seat.mjs`.
 - Plain English in everything you write yourself: short sentences, no em dashes, no filler.
-- Cost: a standard seat is about 8 to 10 sub-agent runs. Say which depth you used.
+- A portrait is part of every seat, made from a real photo with the original seven's prompts and style reference. A written description alone never sets the likeness.
+- Cost: a standard seat is about 8 to 10 sub-agent runs plus about 5 kie.ai image jobs. Say which depth you used.
