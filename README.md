@@ -2,7 +2,7 @@
 
 ![The Roast Room](docs/room.jpg)
 
-Bring a hard business decision and seven AI advisors argue it out, then hand you a scored verdict and a one-click PDF. The seats are Jeff Bezos, Paul Graham, Alex Hormozi, Gary Vaynerchuk, Dan Martell, Gino Wickman, and Warren Buffett, each built from that person's public work: their letters, essays, talks, and videos. The council runs in Claude Code, and a small local web app shows them around a table talking it through. Want someone else at the table? Type `/newroaster` and a name, and Claude builds that advisor the same way.
+Bring a hard business decision and a council of AI advisors argues it out, then hands you a scored verdict and a one-click PDF. Eleven advisors ship with it, each built from that person's public work: their letters, essays, talks, and videos. For each question, the Chair recommends who should sit on the council and you confirm. The council runs in Claude Code, and a small local web app shows them around a table talking it through. Want someone else at the table? Type `/newroaster` and a name, and Claude builds that advisor the same way.
 
 | Seat | Pillar | The question they own |
 |---|---|---|
@@ -13,6 +13,15 @@ Bring a hard business decision and seven AI advisors argue it out, then hand you
 | Dan Martell | People, hiring, and founder time | Who does this, and what does it cost your calendar? |
 | Gino Wickman | Operations and scaling | Can the business run this without you holding it together? |
 | Warren Buffett | Money and capital | What does it do to cash, risk, and long-term value? |
+
+Those seven are the **default board**. Four more advisors are on call, and the Chair brings them in when your question is in their lane:
+
+| Seat | Pillar | The question they own |
+|---|---|---|
+| Naval Ravikant | Leverage and wealth | Does this build leverage and equity you own, or does it just rent out your time? |
+| Codie Sanchez | Buying and owning small businesses | Should you build this, or buy something that already works? |
+| Leila Hormozi | Leadership and scaling teams | Can your team and your leadership carry this, and who has to change? |
+| Sara Blakely | Consumer product and brand from zero | Will customers love it enough to sell it for you, without outside money? |
 
 ## What you need
 
@@ -70,32 +79,39 @@ The room is optional. The council runs the same in Claude Code without it.
 
 ## Choose who sits at the table
 
-Out of the box, every council seats the same seven advisors: your **default board**. It lives in `.claude/skills/roast-room/roster.json`:
+When you run `/roast-room`, the Chair reads your question and recommends a council from every advisor you have, with one line on why each one fits. You pick:
+
+- **Recommended board**: the five to seven advisors the Chair picked for this question.
+- **Default board**: your usual seven.
+- **Everyone**: all of them, when you have nine or fewer.
+- **Other**: type changes, like "recommended, but add Naval and drop Wickman".
+
+A pricing question might get Hormozi, Buffett, Codie Sanchez, Sara Blakely, and Graham. A hiring question might get Leila Hormozi, Martell, Wickman, Naval, and Buffett. Every council keeps a seat that guards your downside and one that's likely to disagree, so the room argues instead of nodding.
+
+How the board gets picked is a setting in `.claude/skills/roast-room/roster.json`:
 
 ```json
 {
-  "board": "default",
+  "board": "ask",
   "default": ["bezos", "graham", "hormozi", "garyvee", "martell", "wickman", "buffett"],
   "seats": [ ...every advisor you have... ]
 }
 ```
 
-`"board"` decides how each council picks its seats:
-
 | Setting | What happens on every `/roast-room` |
 |---|---|
-| `"default"` (out of the box) | The default board sits. No questions. |
-| `"ask"` | The Chair shows your advisors and asks: keep the default board, let the Chair pick, or name the seats. |
-| `"auto"` | The Chair picks the best seats for this decision from everyone you have (up to seven, always including a money or risk seat) and tells you who and why. |
+| `"ask"` (out of the box) | The Chair recommends a council and asks you to confirm it. |
+| `"auto"` | The Chair picks the council and tells you who and why, without asking. |
+| `"default"` | Your default board sits every time. No question. |
 
-You don't need to edit the file by hand. Type `/roast-room board` and say what you want: "put Naval on my default board", "take Gary V off", or "ask me every time".
+You don't need to edit the file by hand. Type `/roast-room board` and say what you want: "put Naval on my default board", "take Gary V off", or "stop asking me, just use my default board".
 
-One run can always override the board: `--seats hormozi,naval,buffett` seats exactly those advisors, `--all` seats everyone, and `--quick` picks four from whoever is seated. A table holds up to nine.
+Skip the question on any run: `--seats hormozi,naval,buffett` seats exactly those advisors, and `--all` seats everyone (up to nine). `--quick` recommends four.
 
 ## Add your own advisor
 
 ```
-/newroaster Naval Ravikant
+/newroaster Morgan Housel
 ```
 
 Claude builds a new seat the way the original seven were built:
@@ -114,7 +130,7 @@ Claude builds a new seat the way the original seven were built:
 | default | 30 to 50 | An advisor you'll use |
 | `--deep` | 80+ | Matching the original seven |
 
-A standard build is about 8 to 10 sub-agent runs, so it uses a real share of your plan. When it finishes, open a new Claude Code session so the advisor loads as its own agent (the council works before that too). Then use them like anyone else: `/roast-room ask naval ...`, `/roast-room --seats naval,buffett,hormozi ...`, or put them on your default board.
+A standard build is about 8 to 10 sub-agent runs, so it uses a real share of your plan. When it finishes, open a new Claude Code session so the advisor loads as its own agent (the council works before that too). Then use them like anyone else: `/roast-room ask housel ...`, `/roast-room --seats housel,buffett,hormozi ...`, or put them on your default board. The Chair also starts recommending them when a question fits their pillar.
 
 You can build an advisor from public figures, living or historical, with a real body of public work, or from your own material (your posts, transcripts, notes) if you want yourself or a consenting mentor on the board. The raw sources stay on your machine; only the brain, which holds short quotes and paraphrase, is meant to be committed.
 

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { byKey, systemFor, parseCard, checkQuotes, defaultBoard } from "./seats.mjs";
+import { SEATS, BOARD, byKey, systemFor, parseCard, checkQuotes, defaultBoard, loadRoster } from "./seats.mjs";
 import * as ai from "./anthropic.mjs";
 import { S } from "./anthropic.mjs";
 import { SESSIONS_DIR } from "./env.mjs";
@@ -193,6 +193,7 @@ async function chairSetup(st) {
     assumptions: S.arr(S.str),
     weights: S.arr(S.obj({ seat: S.enum(...st.board), weight: S.int, reason: S.str })),
     quick_seats: S.arr(S.enum(...st.board)),
+    seats: S.arr(S.enum(...st.board)),
   });
   return ai.json({
     model: MODELS.chair, system: chairSystem(st), schema, maxTokens: 3000,
@@ -207,7 +208,8 @@ Set up the room.
 - brief: under 200 words covering the business, resources, what success looks like, and the founder's lean, using only what the founder said. Do not invent facts.
 - assumptions: any number or fact you had to assume to make the brief usable, each one line. Keep it to what matters.
 - weights: one entry for every seat, weight 1 to 3 (3 = the decision lives in this pillar, 2 = materially affected, 1 = touched at the edges). Exactly one or two seats at 3. Reason in one line.
-- quick_seats: the four seats for a quick council: the two highest-weight seats, the seat that guards the downside (money, capital, or risk) if it is not already in, and the seat most likely to disagree with the others.`,
+- quick_seats: the four seats for a quick council: the two highest-weight seats, the seat that guards the downside (money, capital, or risk) if it is not already in, and the seat most likely to disagree with the others.
+- seats: ${st.pick ? "the board for a full council, five to seven seats: every seat at weight 2 or 3, the seat that guards the downside, and the seat most likely to disagree. Leave out seats at weight 1 unless they are the downside or dissent seat." : "every seat (the board is fixed)."}`,
   });
 }
 
@@ -340,7 +342,11 @@ export function startCouncil(prompt, mode = "full") {
 }
 
 async function run(s) {
-  const st = (s.state = { prompt: s.prompt, mode: s.mode, board: defaultBoard(), cards: { 1: {}, 2: {}, 3: {} }, scores: {}, rounds: [] });
+  // "default" seats the saved default board; "ask" and "auto" let the Chair pick from every seat
+  // (there is no one to ask in the room, so "ask" picks like "auto" here)
+  loadRoster();
+  const pick = BOARD.mode !== "default";
+  const st = (s.state = { prompt: s.prompt, mode: s.mode, pick, board: pick ? SEATS.map((x) => x.key) : defaultBoard(), cards: { 1: {}, 2: {}, 3: {} }, scores: {}, rounds: [] });
   emit(s, "phase", { phase: "setup", label: "The Chair is reading your question" });
   const setup = await chairSetup(st);
   Object.assign(st, {
@@ -349,10 +355,13 @@ async function run(s) {
     weights: Object.fromEntries(st.board.map((k) => [k, { weight: 1, reason: "" }])),
   });
   for (const w of setup.weights) if (st.weights[w.seat]) st.weights[w.seat] = { weight: Math.max(1, Math.min(3, w.weight)), reason: w.reason };
-  st.seats = s.mode === "quick" ? [...new Set(setup.quick_seats)].filter((k) => st.board.includes(k)).slice(0, 4) : st.board.slice();
+  const picked = [...new Set(setup.seats || [])].filter((k) => st.board.includes(k)).slice(0, 9);
+  const full = pick && picked.length >= 3 ? picked : st.board.slice(0, 9);
+  st.seats = s.mode === "quick" ? [...new Set(setup.quick_seats)].filter((k) => st.board.includes(k)).slice(0, 4) : full;
   if (s.mode === "quick" && st.seats.length < 4) {
-    for (const k of st.board) if (st.seats.length < 4 && !st.seats.includes(k)) st.seats.push(k);
+    for (const k of full) if (st.seats.length < 4 && !st.seats.includes(k)) st.seats.push(k);
   }
+  st.board = st.seats.slice(); // later Chair calls only see the seats at the table
   emit(s, "setup", { title: st.title, decision: st.decision, brief: st.brief, options: st.options, assumptions: st.assumptions, weights: st.weights, seats: st.seats, mode: s.mode });
 
   emit(s, "phase", { phase: "round1", label: "Round 1: opening positions" });

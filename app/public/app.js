@@ -21,7 +21,7 @@ const GUIDE = `
       <ol>
         <li><span>Open Claude Code in this folder.</span></li>
         <li><span>Type <code>/roast-room</code> and your decision.</span></li>
-        <li><span>Answer the Chair's questions. Then watch the council argue it out here.</span></li>
+        <li><span>Pick your advisors (the Chair recommends a board) and answer its questions. Then watch the council argue it out here.</span></li>
         <li><span>When the verdict lands, download it as a PDF.</span></li>
       </ol>
     </div>
@@ -47,10 +47,11 @@ const GUIDE = `
     <div class="guide-sec">
       <h4>Good to know</h4>
       <ul>
-        <li><span><b>Full council:</b> your default board (the 7 advisors out of the box), 3 rounds. For big calls that are hard to undo.</span></li>
+        <li><span><b>Pick your council:</b> the Chair recommends the advisors that fit your question and asks you to confirm. Add or drop anyone.</span></li>
+        <li><span><b>Full council:</b> 5 to 7 advisors, 3 rounds. For big calls that are hard to undo.</span></li>
         <li><span><b>Quick:</b> add <code>--quick</code> for 4 advisors and 2 rounds. Uses far less of your plan.</span></li>
         <li><span><b>Every council is saved.</b> Open Past sessions to replay one or download its PDF.</span></li>
-        <li><span><b>Add an advisor:</b> type <code>/newroaster</code> and a name. Change who sits at the table with <code>/roast-room board</code>.</span></li>
+        <li><span><b>Add an advisor:</b> type <code>/newroaster</code> and a name. Change your default board with <code>/roast-room board</code>.</span></li>
       </ul>
     </div>
   </div>`;

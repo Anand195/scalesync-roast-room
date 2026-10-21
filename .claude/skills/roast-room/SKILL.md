@@ -12,8 +12,8 @@ Read once before the first run: `roster.json` (every seat and the default board)
 
 ## Modes
 
-- **Full council** (default): the board (see "Pick the board"), three rounds. For decisions that are expensive or hard to undo.
-- **Quick** (`--quick`): four seats from the board, chosen per `seats.md`, Rounds 1 and 2, Round 3 only if the scores did not converge. For reversible calls.
+- **Full council** (default): a board recommended for this decision and confirmed by the user (see "Pick the board"), three rounds. For decisions that are expensive or hard to undo.
+- **Quick** (`--quick`): four seats, recommended per "Pick the board" and `seats.md`, Rounds 1 and 2, Round 3 only if the scores did not converge. For reversible calls.
 - **Named seats** (`--seats a,b,c`): only those seats, three rounds. Any seat in `roster.json` can be named, on the default board or not.
 - **Everyone** (`--all`): every seat in `roster.json`, up to nine.
 - **Consult** (`ask <seat> ...`): one seat, one answer, using the single-seat prompt. No scoring, no session folder needed. Works for any seat in the roster.
@@ -23,12 +23,32 @@ Read once before the first run: `roster.json` (every seat and the default board)
 
 Who sits at the table comes from `roster.json`, in this order:
 
-1. `--seats a,b,c` or `--all` on this run wins. `--quick` then picks four from those seats.
+1. `--seats a,b,c` or `--all` on this run wins. No question. `--quick` then picks four from those seats.
 2. Otherwise `"board"` in `roster.json` decides:
-   - `"default"` (out of the box): seat the `"default"` list. No question asked.
-   - `"ask"`: before the brief, show the default board and the other seats in one line each (name and pillar), and ask with one AskUserQuestion: keep the default board (recommended), let the Chair pick, or name the seats. Then seat the answer.
-   - `"auto"`: the Chair picks the best seats for this decision from the whole roster: up to seven, every pillar the decision touches, always one seat that guards the downside (money, capital, or risk), and never two seats with the same pillar unless they disagree on it. Say who was picked and why in one line before Round 1.
+   - `"ask"` (out of the box): recommend a board for this decision and ask the user to confirm it (below).
+   - `"auto"`: recommend a board the same way and seat it without asking. Say who and why in one line.
+   - `"default"`: seat the `"default"` list. No question.
 3. Never seat more than nine. Every seat at the table must have an agent file (`.claude/agents/council-<key>.md`) and a brain folder; skip and name any that do not.
+
+### Recommend a board
+
+Read the decision, then pick from every seat in `roster.json`:
+
+- Every seat whose pillar the decision lives in or materially affects (the seats that would get weight 2 or 3).
+- One seat that guards the downside (Buffett, or the roster's money, capital, or risk seat), whether or not it is on the default board.
+- The seat most likely to disagree with the rest, so the council argues instead of agreeing.
+- Leave out seats whose pillar barely touches the decision. Two seats with close pillars (Martell and Leila Hormozi on people, Hormozi and Codie Sanchez on deals) sit together only when they would disagree.
+- Five to seven seats for a full council, four for `--quick`.
+
+### Ask
+
+Show the recommendation in chat first, as a short list: each recommended seat with one plain line on why it fits this decision, then one line naming the seats left out. Then ask with one AskUserQuestion question (header "Board"):
+
+1. **Recommended board (Recommended)**: the names, in the description.
+2. **Default board**: the `"default"` list, by name.
+3. **Everyone**: every seat in the roster (only when there are nine or fewer; otherwise skip this option).
+
+The user can pick "Other" and type names to swap in or out ("recommended, but add Naval and drop Wickman"). Seat what they chose. When Step 1 also needs to ask about missing facts, put the board question in the same AskUserQuestion call so the user answers once. If the user said "just run it", seat the recommended board without asking.
 
 Tell the user who is at the table in one line when the council starts, and that `--seats`, `--all`, or `/roast-room board` change it.
 
@@ -97,8 +117,8 @@ Quick mode skips this round when the Round 2 spread on the top option is 3 or le
 
 `/roast-room board` (or "change my board", "who's on my board", "add Naval to my default board") edits `roster.json` and runs no council.
 
-1. Show the roster in a short table: seat, pillar, on the default board or not. Then the current `"board"` setting in plain words ("every council seats your default board", "the Chair asks each time", or "the Chair picks per decision").
-2. Ask what to change, with AskUserQuestion when the user has not already said: add or remove seats on the default board, or switch the setting between `default`, `ask`, and `auto`.
+1. Show the roster in a short table: seat, pillar, on the default board or not. Then the current `"board"` setting in plain words ("the Chair recommends a board for each decision and asks you", "the Chair picks per decision without asking", or "every council seats your default board").
+2. Ask what to change, with AskUserQuestion when the user has not already said: add or remove seats on the default board, or switch the setting between `ask`, `auto`, and `default`.
 3. Edit `roster.json` in place: only the `"board"` and `"default"` fields. Keep the default board between one and nine seats, using keys that exist in `"seats"`. Never remove a seat from `"seats"` here; taking someone off the default board keeps them available for `--seats` and `ask`.
 4. Confirm the new board in one line. The room picks it up on its next page load.
 

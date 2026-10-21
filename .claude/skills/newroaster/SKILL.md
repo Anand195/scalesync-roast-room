@@ -16,7 +16,7 @@ The raw sources stay in a local build folder that git ignores. Only the brain sh
 
 Build folder: `build/<slug>/` at the project root.
 
-Read before the first run: `references/brain-spec.md` (the brain layout and its rules), `references/extract-prompt.md` (what each extraction agent gets), `references/agent-template.md` (the seat agent).
+Read before the first run: `references/brain-spec.md` (the brain layout and its rules), `references/extract-prompt.md` (what each extraction agent gets), `references/writer-prompt.md` (what each brain writer gets), `references/agent-template.md` (the seat agent).
 
 ## Who can be a roaster
 
@@ -44,7 +44,7 @@ From the user's message, get the person's full name. If anything below is missin
 2. **Default board?** Put them at the table for every council, or keep them on call (`--seats` and `ask`). If the default board already has nine seats, ask who they replace.
 3. **Depth**: quick, standard, or deep (default standard).
 
-Then fix the names: `key` (short lowercase, letters only, unique in the roster, usually the surname: `naval`, `drucker`), `slug` (`first-last`), `short` (how the room names them: "Naval"), and the scorecard `dimension` (a few words for what this seat scores, like "Leverage and long-term wealth").
+Then fix the names: `key` (short lowercase, letters only, unique in the roster, usually the surname: `naval`, `drucker`; the first name when another seat already has the surname: `leila`), `slug` (`first-last`), `short` (how the room names them: "Naval", "Leila"), and the scorecard `dimension` (a few words for what this seat scores, like "Leverage and long-term wealth").
 
 Check the roster first: if the person already has a seat, stop and offer to refresh it instead (step 3 onward on the same slug; fetch skips sources already in `sources.json`).
 
@@ -94,7 +94,7 @@ Create `.claude/skills/roast-room/brains/<slug>/`. Write `sources.md` with the s
 node .claude/skills/newroaster/scripts/fetch.mjs <build> --sources-md .claude/skills/roast-room/brains/<slug>/sources.md --name "Full Name"
 ```
 
-Then spawn three writer agents in one message, in parallel (`general-purpose`, default model). Each reads every notes file plus `references/brain-spec.md` and writes its files into the brain folder, following the spec's budgets and rules:
+Then spawn three writer agents in one message, in parallel (`general-purpose`, default model), with the prompt from `references/writer-prompt.md`. Each reads every notes file plus `references/brain-spec.md` and writes its files into the brain folder, following the spec's budgets and rules:
 
 - Writer A: `frameworks.md`, `principles.md`, and `books.md`.
 - Writer B: `positions.md` and `stories.md`.

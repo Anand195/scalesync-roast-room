@@ -77,6 +77,21 @@ export function checkQuotes(key, text) {
   return out;
 }
 
+// ---------- names ----------
+/** A seat named somewhere in a short piece of text: full name first, then short name, then
+ * surname. Two seats can share a surname (Alex and Leila Hormozi), so the surname only counts
+ * when one seat has it, or when it is also that seat's short name. */
+export function seatIn(text) {
+  const t = ` ${String(text || "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ")} `;
+  const has = (w) => w && t.includes(` ${w.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").trim()} `);
+  return SEATS.find((s) => has(s.name)) || SEATS.find((s) => has(s.short) || has(s.key)) ||
+    SEATS.find((s) => {
+      const sur = s.name.split(" ").pop().toLowerCase();
+      const same = SEATS.filter((x) => x.name.split(" ").pop().toLowerCase() === sur);
+      return has(sur) && (same.length === 1 || s.short.toLowerCase() === sur);
+    }) || null;
+}
+
 // ---------- card parsing ----------
 const field = (text, label) => {
   // label at line start, or after a "·" or "|" when several fields share a line
@@ -101,7 +116,7 @@ export function parseCard(text, optionIds) {
   const stance = field(text, "STANCE");
   const ruin = (field(text, "RUIN RISK").match(/none|possible|likely/i) || [""])[0].toLowerCase();
   const disagree = field(text, "I DISAGREE MOST WITH");
-  const target = SEATS.find((s) => new RegExp(`\\b(${s.short}|${s.name.split(" ").pop()})\\b`, "i").test(disagree.slice(0, 40)));
+  const target = seatIn(disagree.slice(0, 40));
   const voteRaw = field(text, "VOTE");
   const vote = /dissent/i.test(voteRaw) ? "dissent" : /amend/i.test(voteRaw) ? "amend" : /endorse/i.test(voteRaw) ? "endorse" : "";
   return {

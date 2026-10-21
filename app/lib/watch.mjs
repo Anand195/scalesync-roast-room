@@ -8,7 +8,7 @@
 //   verdict.json  -> the verdict
 import fs from "node:fs";
 import path from "node:path";
-import { SEATS, byKey, parseCard, checkQuotes, loadRoster, defaultBoard } from "./seats.mjs";
+import { SEATS, byKey, parseCard, checkQuotes, loadRoster, defaultBoard, seatIn } from "./seats.mjs";
 import { SESSIONS_DIR } from "./env.mjs";
 import { optionScores, finalNumbers, verdictSeats, DISCLAIMER } from "./council.mjs";
 
@@ -22,7 +22,7 @@ const readJson = (p) => { const t = readText(p); if (!t) return null; try { retu
 export function seatKey(x) {
   const t = String(x || "").toLowerCase().replace(/\(.*$/, "").replace(/[^a-z ]/g, " ").replace(/\s+/g, " ").trim();
   if (!t) return null;
-  return SEATS.find((s) => t === s.key || t === s.short.toLowerCase() || t.startsWith(s.short.toLowerCase()) || t === s.name.toLowerCase() || t.split(" ").includes(s.name.split(" ").pop().toLowerCase()))?.key || null;
+  return SEATS.find((s) => t === s.key || t === s.short.toLowerCase() || t === s.name.toLowerCase())?.key || seatIn(t)?.key || null;
 }
 
 /** Split a round file into seat cards. A card is the text under a "## <Seat>" heading

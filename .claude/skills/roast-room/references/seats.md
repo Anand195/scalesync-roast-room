@@ -28,7 +28,7 @@ Every seat is at least 1. Exactly one or two seats get a 3.
 
 ## Quick council
 
-`--quick` seats four from the board: the two highest-weight seats, the seat that guards the downside (Buffett or Bezos out of the box; otherwise the board's money, capital, or risk seat), and the seat most likely to disagree with the others (the Chair names why). Use quick for reversible, low-stakes calls. Full council for anything a founder cannot easily undo.
+`--quick` seats four (recommended per SKILL.md "Pick the board", then confirmed): the two highest-weight seats, the seat that guards the downside (Buffett or Bezos out of the box; otherwise the board's money, capital, or risk seat), and the seat most likely to disagree with the others (the Chair names why). Use quick for reversible, low-stakes calls. Full council for anything a founder cannot easily undo.
 
 ## Natural tensions to expect
 
@@ -38,5 +38,20 @@ Every seat is at least 1. Exactly one or two seats get a 3.
 - Martell (buy back your time, hire early) against Graham and Buffett (stay small and frugal until it works).
 
 Seats added with `/newroaster` append their own tension lines here.
+
+On-call seats (in `roster.json`, off the default board; the Chair recommends them when the decision is in their lane):
+
+| Seat | Agent | Pillar | Owns the question | Brain |
+|---|---|---|---|---|
+| Naval | `council-naval` | Leverage and wealth | Does this build leverage and equity you own, or does it just rent out your time? | `brains/naval-ravikant/` |
+| Codie | `council-sanchez` | Buying and owning small businesses | Should you build this, or buy something that already works? | `brains/codie-sanchez/` |
+| Sara | `council-blakely` | Consumer product and brand from zero | Will customers love it enough to sell it for you, without outside money? | `brains/sara-blakely/` |
+| Leila | `council-leila` | Leadership and scaling teams | Can your team and your leadership carry this, and who has to change? | `brains/leila-hormozi/` |
+
+- Naval (own the equity, tiny teams, self-fund) against Hormozi and Gary V (more volume, more offers, more output that the founder still has to rent their hours to).
+- Codie (buy proven cash flow) against Graham and Naval (build something new people want).
+- Sara (product good enough to sell itself, no ads, no outside money) against Gary V and Hormozi (attention and sales machines) and against any seat pushing to raise.
+- Leila (fix lead flow and the founder's leadership before hiring) against Martell (hire early to buy back time). Leila and Wickman agree on accountability and split when process stands in for leadership.
+- Leila Hormozi and Alex Hormozi are different seats and different people. Name them "Leila" and "Hormozi".
 
 If Round 1 comes back unanimous, the Chair should be suspicious and press the seat whose pillar is most at risk in Round 2.
