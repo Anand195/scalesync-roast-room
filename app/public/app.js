@@ -267,6 +267,17 @@ function bindUI() {
   $("#newBtn").addEventListener("click", reset);
   $("#verdictSheet").addEventListener("click", (e) => { if (e.target.id === "verdictSheet" || e.target.closest("[data-close]")) $("#verdictSheet").hidden = true; });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("#verdictSheet").hidden = true; });
+  // Clicking the dimmed backdrop around a card, the guide, or past sessions closes it (Escape already does).
+  // Both press and release must land outside the box, so a text selection dragged out of it never closes it.
+  $$("dialog.card-dialog").forEach((d) => {
+    const outside = (e) => {
+      const r = d.getBoundingClientRect();
+      return e.target === d && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom);
+    };
+    let pressedOutside = false;
+    d.addEventListener("pointerdown", (e) => { pressedOutside = outside(e); });
+    d.addEventListener("click", (e) => { if (pressedOutside && outside(e)) d.close(); pressedOutside = false; });
+  });
   $$(".speed button").forEach((b) => b.addEventListener("click", () => {
     player.speed = Number(b.dataset.speed);
     $$(".speed button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
