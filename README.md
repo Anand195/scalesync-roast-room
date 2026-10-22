@@ -2,7 +2,7 @@
 
 ![The Roast Room](docs/room.jpg)
 
-Bring a hard business decision and a council of AI advisors argues it out, then hands you a scored verdict and a one-click PDF. Eleven advisors ship with it, each built from that person's public work: their letters, essays, talks, and videos. For each question, the Chair recommends who should sit on the council and you confirm. The council runs in Claude Code, and a small local web app shows them around a table talking it through. Want someone else at the table? Type `/newroaster` and a name, and Claude builds that advisor the same way.
+Bring a hard business decision and a council of AI advisors argues it out, then hands you a scored verdict and a one-click PDF. Twelve advisors ship with it, each built from that person's public work: their letters, essays, talks, and videos. For each question, the Chair recommends who should sit on the council and you confirm. The council runs in Claude Code, and a small local web app shows them around a table talking it through. Want someone else at the table? Type `/newroaster` and a name, and Claude builds that advisor the same way.
 
 | Seat | Pillar | The question they own |
 |---|---|---|
@@ -14,7 +14,7 @@ Bring a hard business decision and a council of AI advisors argues it out, then 
 | Gino Wickman | Operations and scaling | Can the business run this without you holding it together? |
 | Warren Buffett | Money and capital | What does it do to cash, risk, and long-term value? |
 
-Those seven are the **default board**. Four more advisors are on call, and the Chair brings them in when your question is in their lane:
+Those seven are the **default board**. Five more advisors are on call, and the Chair brings them in when your question is in their lane:
 
 | Seat | Pillar | The question they own |
 |---|---|---|
@@ -22,6 +22,7 @@ Those seven are the **default board**. Four more advisors are on call, and the C
 | Codie Sanchez | Buying and owning small businesses | Should you build this, or buy something that already works? |
 | Leila Hormozi | Leadership and scaling teams | Can your team and your leadership carry this, and who has to change? |
 | Sara Blakely | Consumer product and brand from zero | Will customers love it enough to sell it for you, without outside money? |
+| Elon Musk | First principles and execution speed | What is the real constraint here, and can we cut steps and build it faster? |
 
 ## What you need
 
