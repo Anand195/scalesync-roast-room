@@ -1,11 +1,12 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
-import { APP_ROOT, env } from "./lib/env.mjs";
+import { APP_ROOT, REPO_ROOT, SESSIONS_DIR, env } from "./lib/env.mjs";
 import { loadRoster, BOARD } from "./lib/seats.mjs";
 import { startCouncil, getSession, subscribe, listSaved, loadSaved, MODELS } from "./lib/council.mjs";
 import { usage } from "./lib/anthropic.mjs";
 import * as watch from "./lib/watch.mjs";
+import { startLocalCouncil, getRequest, listRequests, runningRequestId } from "./lib/local-runner.mjs";
 
 const PORT = Number(process.env.PORT) || 4730;
 const PUBLIC = path.join(APP_ROOT, "public");
@@ -13,9 +14,10 @@ const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; ch
 
 let running = null; // one council at a time (API runner)
 
-// "viewer" (default): the room plays councils that /roast-room runs in Claude Code.
-// "api": the room can also run councils itself on ANTHROPIC_API_KEY (COUNCIL_RUNNER=api in .env).
-const RUNNER = (process.env.COUNCIL_RUNNER || env("COUNCIL_RUNNER") || "viewer").toLowerCase() === "api" ? "api" : "viewer";
+// "viewer" watches chat-run councils; "codex" and "claude" use signed-in local CLIs;
+// "api" uses ANTHROPIC_API_KEY. All four share the saved sessions folder.
+const configuredRunner = (process.env.COUNCIL_RUNNER || env("COUNCIL_RUNNER") || "viewer").toLowerCase();
+const RUNNER = ["api", "codex", "claude"].includes(configuredRunner) ? configuredRunner : "viewer";
 watch.startWatching();
 
 function send(res, code, body, type = "application/json") {
@@ -33,21 +35,32 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const p = url.pathname;
   try {
+    if (p === "/api/health") return send(res, 200, { ok: true, runner: RUNNER, repository: REPO_ROOT });
     if (p === "/api/seats") {
       // portraits: which of the four mouth shapes exist for each seat (a seat with none gets a drawn bust)
       const frame = (key, sh) => ["webp", "png", "jpg"].map((x) => `${key}-${sh}.${x}`).find((f) => fs.existsSync(path.join(PUBLIC, "portraits", f)));
       const seats = loadRoster().map((s) => ({ ...s, portraits: Object.fromEntries(["base", "open", "mid", "blink"].map((sh) => [sh, frame(s.key, sh)]).filter(([, f]) => f).map(([sh, f]) => [sh, `/portraits/${f}`])) }));
-      return send(res, 200, { seats, board: BOARD, models: MODELS, runner: RUNNER, hasKey: Boolean(env("ANTHROPIC_API_KEY")) });
+      return send(res, 200, { seats, board: BOARD, models: RUNNER === "codex" ? { seat: "Codex CLI", chair: "Codex CLI" }
+        : RUNNER === "claude" ? { seat: "Claude Code", chair: "Claude Code" } : MODELS,
+        runner: RUNNER, hasKey: Boolean(env("ANTHROPIC_API_KEY")) });
     }
     if (p === "/api/usage") return send(res, 200, usage);
     if (p === "/api/council" && req.method === "POST") {
-      if (RUNNER !== "api") return send(res, 403, { error: "This room is a viewer. Run /roast-room in Claude Code, or set COUNCIL_RUNNER=api in .env." });
-      if (running && getSession(running)?.status === "running") return send(res, 409, { error: "A council is already in session. Wait for its verdict." });
-      const { prompt, mode } = await readJson(req);
-      if (!prompt || prompt.trim().length < 10) return send(res, 400, { error: "Give the council a real decision (at least a sentence)." });
+      const origin = req.headers.origin;
+      if (origin && !/^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) return send(res, 403, { error: "Local requests only." });
+      if (RUNNER === "viewer") return send(res, 403, { error: "This room is a viewer. Set COUNCIL_RUNNER=claude, codex, or api to ask here." });
+      if ((running && getSession(running)?.status === "running") || runningRequestId()) return send(res, 409, { error: "A council is already in session. Wait for its verdict." });
+      const { prompt, mode, source } = await readJson(req);
+      if (typeof prompt !== "string" || prompt.trim().length < 10) return send(res, 400, { error: "Give the council a real decision (at least a sentence)." });
+      if (RUNNER === "codex" || RUNNER === "claude") {
+        try {
+          const s = startLocalCouncil(prompt, mode, typeof source === "string" ? source.slice(0, 30) : "room", RUNNER);
+          return send(res, 200, { id: s.id, status: s.status });
+        } catch (e) { return send(res, 400, { error: e.message }); }
+      }
       const s = startCouncil(prompt.trim().slice(0, 4000), mode === "quick" ? "quick" : "full");
       running = s.id;
-      return send(res, 200, { id: s.id });
+      return send(res, 200, { id: s.id, status: s.status });
     }
     if (p.startsWith("/api/stream/")) {
       const id = decodeURIComponent(p.split("/").pop());
@@ -60,14 +73,31 @@ const server = http.createServer(async (req, res) => {
       return subscribe(s, res);
     }
     if (p === "/api/sessions") {
-      const all = [...listSaved(), ...watch.listLive()].sort((a, b) => (a.id < b.id ? 1 : -1));
+      const byId = new Map([...listSaved(), ...watch.listLive()].map((s) => [s.id, s]));
+      for (const r of listRequests()) {
+        const old = byId.get(r.id) || {};
+        byId.set(r.id, { ...old, id: r.id, title: old.title || r.prompt.slice(0, 60), prompt: r.prompt,
+          mode: r.mode, status: r.status, source: r.source, runner: r.runner, error: r.error });
+      }
+      const all = [...byId.values()].sort((a, b) => (a.id < b.id ? 1 : -1));
       const apiRunning = running && getSession(running)?.status === "running" ? running : null;
-      return send(res, 200, { sessions: all, running: apiRunning, live: watch.runningId() });
+      return send(res, 200, { sessions: all, running: apiRunning, live: watch.runningId(), pending: runningRequestId() });
+    }
+    if (p.startsWith("/api/requests/")) {
+      const id = decodeURIComponent(p.split("/").pop());
+      const r = getRequest(id);
+      if (!r) return send(res, 404, { error: "not found" });
+      const verdictFile = path.join(SESSIONS_DIR, id, "verdict.md");
+      const answerFile = path.join(SESSIONS_DIR, id, "answer.md");
+      return send(res, 200, { ...r, verdict: fs.existsSync(verdictFile) ? fs.readFileSync(verdictFile, "utf8") : null,
+        answer: fs.existsSync(answerFile) ? fs.readFileSync(answerFile, "utf8") : null });
     }
     if (p.startsWith("/api/sessions/")) {
       const id = decodeURIComponent(p.split("/").pop());
       const x = watch.getLive(id);
-      const j = loadSaved(id) || (x && { id, title: x.title, mode: x.mode, status: x.status, events: x.events });
+      const r = getRequest(id);
+      const j = loadSaved(id) || (x && { id, title: x.title, mode: x.mode, status: x.status, events: x.events }) ||
+        (r && { id, title: r.prompt.slice(0, 60), prompt: r.prompt, mode: r.mode, status: r.status, error: r.error, events: [] });
       return j ? send(res, 200, j) : send(res, 404, { error: "not found" });
     }
     // static
@@ -80,4 +110,4 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, "127.0.0.1", () => console.log(`Roast Room on http://localhost:${PORT} (${RUNNER === "api" ? "viewer + API runner" : "viewer: run /roast-room in Claude Code"})`));
+server.listen(PORT, "127.0.0.1", () => console.log(`Roast Room on http://localhost:${PORT} (${RUNNER} runner)`));

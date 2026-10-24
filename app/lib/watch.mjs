@@ -156,8 +156,11 @@ function sync(x) {
     } else return;
   }
   if (x.step === "r3") {
-    if (!readRound(x, 3, has("verdict.json"))) return;
-    emit(x, "phase", { phase: "verdict", label: "The Chair is writing the verdict", at: mtime(f("round-3.md")) });
+    // A quick council can save a proposal but skip ratification. Treat the
+    if (st.mode === "quick" && has("verdict.json") && !has("round-3.md")) {
+      emit(x, "phase", { phase: "skip3", label: "Quick mode: the vote round is skipped", at: mtime(f("verdict.json")) });
+    } else if (!readRound(x, 3, has("verdict.json"))) return;
+    emit(x, "phase", { phase: "verdict", label: "The Chair is writing the verdict", at: mtime(f("verdict.json")) });
     x.step = "verdict";
   }
   if (x.step === "verdict") {

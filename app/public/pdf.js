@@ -1,10 +1,10 @@
 // The Roast Room verdict as a one or two page branded PDF, built in the browser with a
 // vendored jsPDF, so the room still needs nothing installed. White page, Montserrat,
-// AIS Dark Blue type, AIS Blue as the accent only (AIS Brand Guidelines v1).
+// ScaleSync branding in the local edition.
 
 const C = {
   ink: [7, 18, 28], soft: [55, 68, 82], mute: [112, 124, 138], rule: [226, 231, 237],
-  tint: [243, 246, 249], track: [228, 233, 239], accent: [55, 189, 248], white: [255, 255, 255],
+  tint: [243, 246, 249], track: [228, 233, 239], accent: [0, 166, 200], white: [255, 255, 255],
 };
 const LABEL = { go: [63, 207, 142], amber: [255, 144, 37], red: [255, 90, 79] };
 const labelColor = (l) => (/DON'T/.test(l) ? LABEL.red : /RESHAPE|WAIT/.test(l) ? LABEL.amber : LABEL.go);
@@ -50,7 +50,7 @@ export async function downloadVerdictPdf({ setup, verdict: ev, byKey, id }) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: "pt", format: "letter", compress: true });
   await addFonts(doc);
-  const logo = "data:image/png;base64," + (await fetchBase64("/brand/ais-horizontal-on-light.png"));
+  const logo = "data:image/png;base64," + (await fetchBase64("/brand/scalesync-logo.png"));
 
   const v = ev.verdict;
   const seats = ev.seats || [];
@@ -114,7 +114,7 @@ export async function downloadVerdictPdf({ setup, verdict: ev, byKey, id }) {
   };
 
   // ---------------------------------------------------------------- header
-  doc.addImage(logo, "PNG", M, y, 62, 62 * 374 / 900, "ais-logo", "SLOW");
+  doc.addImage(logo, "PNG", M, y, 92, 92 * 220 / 840, "scalesync-logo", "SLOW");
   font(15, "bold", C.ink); doc.text("Roast Room", W - M, y + 12, { align: "right" });
   font(8.5, "normal", C.mute); doc.text(`Verdict report · ${dateLine(id)}`, W - M, y + 25, { align: "right" });
   y += 40;
@@ -218,7 +218,7 @@ export async function downloadVerdictPdf({ setup, verdict: ev, byKey, id }) {
     doc.setPage(p);
     doc.setDrawColor(...C.rule); doc.setLineWidth(0.75); doc.line(M, H - 46, W - M, H - 46);
     font(7.5, "semibold", C.mute);
-    const tag = `Roast Room by AI Automation Society · ${p} of ${pages}`;
+    const tag = `Roast Room · ScaleSync edition · ${p} of ${pages}`;
     const tagW = doc.getTextWidth(tag);
     doc.text(tag, W - M, H - 34, { align: "right" });
     font(7.5, "normal", C.mute);

@@ -1,5 +1,4 @@
-/* AI Automation Society. Brand guidelines v1 (Oct 2026): Montserrat only, dark blue grounds,
-   black and white lead, AIS Blue #37bdf8 as the accent only, no blue fills or gradients. */
+/* ScaleSync edition. Preserve the original room layout and use ScaleSync colors. */
 :root {
   --canvas: #07121c;
   --surface: #0a1824;
@@ -10,9 +9,9 @@
   --ink: #ffffff;
   --ink-soft: #c9d1dc;
   --ink-mute: #96a2b5;
-  --accent: #37bdf8;
-  --accent-deep: #37bdf8;
-  --accent-soft: rgba(55, 189, 248, 0.12);
+  --accent: #00a6c8;
+  --accent-deep: #008fb0;
+  --accent-soft: rgba(0, 166, 200, 0.12);
   --go: #3fcf8e;
   --amend: #ff9025;
   --dissent: #ff5a4f;
@@ -48,7 +47,7 @@ button { font: inherit; cursor: pointer; }
   position: sticky; top: 0; z-index: 40;
 }
 .brand { display: flex; align-items: center; gap: 14px; white-space: nowrap; }
-.brand-logo { height: 26px; width: auto; display: block; }
+.brand-logo { height: 36px; width: auto; display: block; background: #fff; padding: 4px 9px; border-radius: 8px; }
 .brand-rule { width: 1px; height: 22px; background: var(--hairline-strong); }
 .brand-name { font: 500 15px/1 var(--font-display); color: var(--ink); letter-spacing: -0.02em; }
 .stepper { display: flex; gap: 2px; list-style: none; margin: 0 auto; padding: 0; }
@@ -316,6 +315,7 @@ button { font: inherit; cursor: pointer; }
 .history button { width: 100%; text-align: left; background: var(--surface-2); color: var(--ink); border: 1px solid var(--hairline); border-radius: 10px; padding: 10px 12px; }
 .history button:hover { border-color: var(--accent); }
 .history small { display: block; color: var(--ink-mute); }
+.history-question { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin-top: 5px; color: var(--ink-soft); font-size: 12px; line-height: 1.4; }
 
 /* ---------------- verdict sheet ---------------- */
 .sheet { position: fixed; inset: 0; z-index: 50; background: rgba(4, 6, 9, .7); display: grid; place-items: end center; overflow-y: auto; padding: 40px 16px 0; animation: fadein .3s both; }

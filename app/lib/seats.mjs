@@ -106,7 +106,7 @@ export function parseOptionScores(text, optionIds) {
   const line = (lm ? lm[1] : "").split(/PILLAR SCORE|CONFIDENCE|FINAL SCORE/i)[0];
   const scores = {};
   for (const id of optionIds) {
-    const m = line.match(new RegExp(`\\b${id}\\b\\s*[:=]?\\s*(\\d+(?:\\.\\d+)?)`));
+    const m = line.match(new RegExp(`\\b${id}\\b\\]?\\s*[:=]?\\s*(\\d+(?:\\.\\d+)?)`));
     if (m) scores[id] = Math.max(0, Math.min(10, Number(m[1])));
   }
   return scores;

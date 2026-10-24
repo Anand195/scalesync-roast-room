@@ -19,9 +19,9 @@ const GUIDE = `
     <div class="guide-sec">
       <h4>How to use the Roast Room</h4>
       <ol>
-        <li><span>Open Claude Code in this folder.</span></li>
-        <li><span>Type <code>/roast-room</code> and your decision.</span></li>
-        <li><span>Pick your advisors (the Chair recommends a board) and answer its questions. Then watch the council argue it out here.</span></li>
+        <li><span>Type your decision here, or ask for Roast Room in Claude Desktop or Codex Desktop.</span></li>
+        <li><span>Include your options, numbers, deadline, and which way you lean.</span></li>
+        <li><span>Watch the council here as its cards and verdict are saved.</span></li>
         <li><span>When the verdict lands, download it as a PDF.</span></li>
       </ol>
     </div>
@@ -35,23 +35,23 @@ const GUIDE = `
         <li><span><b>What success looks like</b>, and by when.</span></li>
         <li><span><b>Which way you're leaning</b>, and why. The council tests it.</span></li>
       </ul>
-      <p class="note" style="margin-top:8px">Left something out? The Chair asks before the council starts.</p>
+      <p class="note" style="margin-top:8px">If facts are missing from a question submitted here, the Chair marks its assumptions.</p>
     </div>
     <div class="guide-sec">
       <h4>Example</h4>
       <div class="example">
-        <p><code>/roast-room</code> ${EXAMPLE.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</p>
+        <p>${EXAMPLE.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</p>
         <button class="ghost" type="button" data-copy-example>Copy this example</button>
       </div>
     </div>
     <div class="guide-sec">
       <h4>Good to know</h4>
       <ul>
-        <li><span><b>Pick your council:</b> the Chair recommends the advisors that fit your question and asks you to confirm. Add or drop anyone.</span></li>
+        <li><span><b>Pick your council:</b> use Full or Quick here. For named seats, run the original <code>/roast-room --seats ...</code> skill in Claude Code.</span></li>
         <li><span><b>Full council:</b> 5 to 7 advisors, 3 rounds. For big calls that are hard to undo.</span></li>
-        <li><span><b>Quick:</b> add <code>--quick</code> for 4 advisors and 2 rounds. Uses far less of your plan.</span></li>
+        <li><span><b>Quick:</b> select the Quick option above for 4 advisors and usually 2 rounds. Uses less of your plan.</span></li>
         <li><span><b>Every council is saved.</b> Open Past sessions to replay one or download its PDF.</span></li>
-        <li><span><b>Add an advisor:</b> type <code>/newroaster</code> and a name. Change your default board with <code>/roast-room board</code>.</span></li>
+        <li><span><b>Add an advisor:</b> ask your coding assistant for <code>/newroaster</code> and a name. Change your default board with <code>/roast-room board</code>.</span></li>
       </ul>
     </div>
   </div>`;
@@ -101,6 +101,11 @@ const state = {
 async function boot() {
   const r = await refreshSeats();
   state.runner = r.runner;
+  $("#runnerNote").textContent = r.runner === "codex" || r.runner === "claude"
+    ? `Your question and council files are saved locally. This room uses the signed-in ${r.runner === "claude" ? "Claude Code" : "Codex CLI"}.`
+    : r.runner === "api"
+      ? "Your question and council files are saved locally. This room uses the configured Anthropic API key."
+      : "Councils run from your AI chat appear here and are saved locally.";
   if (r.runner === "api" && !r.hasKey) toast("No ANTHROPIC_API_KEY found in .env. Add it and restart the server.");
   renderSeats(state.board);
   renderSamples();
@@ -113,6 +118,7 @@ async function boot() {
   const ss = await fetch("/api/sessions").then((x) => x.json());
   if (ss.running) attach(ss.running);
   else if (ss.live) attach(ss.live);
+  else if (ss.pending) showPending(ss.pending);
   refreshUsage();
   setInterval(watchForLive, 2500);
   setInterval(tickWait, 1000);
@@ -133,10 +139,32 @@ async function refreshSeats() {
 const seenLive = new Set();
 async function watchForLive() {
   const ss = await fetch("/api/sessions").then((x) => x.json()).catch(() => null);
+  if (state.pendingId) {
+    const request = await fetch(`/api/requests/${encodeURIComponent(state.pendingId)}`).then((x) => x.json()).catch(() => null);
+    if (request?.status === "error" || request?.status === "interrupted") {
+      $("#launchStatus").textContent = request.error || "The council stopped before writing a verdict.";
+      $("#convene").disabled = false;
+      state.pendingId = null;
+    } else if (request?.status === "done" && !ss?.live) {
+      const id = state.pendingId;
+      state.pendingId = null;
+      $("#convene").disabled = false;
+      replay(id);
+      return;
+    }
+  }
   const id = ss?.live || ss?.running;
   if (!id || seenLive.has(id) || id === state.session) return;
   seenLive.add(id);
+  if (id === state.pendingId) state.pendingId = null;
   attach(id);
+}
+
+function showPending(id) {
+  state.pendingId = id;
+  $("#convene").disabled = true;
+  $("#launchStatus").hidden = false;
+  $("#launchStatus").textContent = "Question saved. The Chair is preparing the council. It will appear here when the first files are ready.";
 }
 
 // AIS arrival: a heading types in a character at a time, blur to sharp
@@ -246,7 +274,8 @@ function bindUI() {
     const j = await r.json();
     $("#convene").disabled = false;
     if (!r.ok) return toast(j.error || "Could not start the council.");
-    attach(j.id);
+    if (state.runner === "codex" || state.runner === "claude") showPending(j.id);
+    else attach(j.id);
   });
   const openFrom = (e) => { const b = e.target.closest("[data-seat]"); if (b) openCard(b.dataset.seat); };
   $("#seats").addEventListener("click", openFrom);
@@ -258,7 +287,7 @@ function bindUI() {
   $("#guideBtn").addEventListener("click", openGuide);
   document.addEventListener("click", async (e) => {
     if (e.target.closest("[data-copy-example]")) {
-      try { await navigator.clipboard.writeText("/roast-room " + EXAMPLE); toast("Copied. Paste it into Claude Code."); }
+      try { await navigator.clipboard.writeText(EXAMPLE); toast("Copied. Paste it into the room or your AI chat."); }
       catch { toast("Copy didn't work here. Select the text and copy it."); }
     }
     if (e.target.closest("[data-pdf]")) savePdf(e.target.closest("[data-pdf]"));
@@ -325,8 +354,11 @@ function reset() {
   hideWait();
   $("#stage").classList.remove("live");
   $("#topic").hidden = true;
-  $("#composer").hidden = state.runner !== "api";
-  $("#waiting").hidden = state.runner === "api";
+  $("#composer").hidden = state.runner === "viewer";
+  $("#waiting").hidden = state.runner !== "viewer";
+  $("#convene").disabled = Boolean(state.pendingId);
+  $("#launchStatus").hidden = !state.pendingId;
+  if (!state.pendingId) $("#launchStatus").textContent = "";
   $("#caption").hidden = true;
   $("#cruxes").hidden = true;
   $("#plate").hidden = true;
@@ -509,7 +541,7 @@ function captionFor(who) {
   c.style.animation = "none"; void c.offsetWidth; c.style.animation = "";
   const s = state.byKey[who];
   $("#capAv").className = `cap-av${s ? "" : " chair"}`;
-  $("#capAv").innerHTML = `<img src="${s ? portrait(who) : "/brand/ais-symbol.png"}" alt="">`;
+  $("#capAv").innerHTML = `<img src="${s ? portrait(who) : "/brand/scalesync-icon.png"}" alt="">`;
   $("#capWho").textContent = s ? s.name : "The Chair";
 }
 
@@ -777,7 +809,7 @@ function onVerdict(ev) {
 async function openHistory() {
   const { sessions } = await fetch("/api/sessions").then((x) => x.json());
   $("#historyList").innerHTML = sessions.length
-    ? sessions.map((s) => `<li><button data-id="${esc(s.id)}"><b>${esc(s.title)}</b><small>${esc(s.id.slice(0, 10))} · ${esc(s.mode)} · ${esc(s.status)}</small></button>${s.status === "done" ? `<button class="pdf" type="button" data-pdf="${esc(s.id)}" title="Download the verdict as a PDF">PDF</button>` : ""}</li>`).join("")
+    ? sessions.map((s) => `<li><button data-id="${esc(s.id)}"><b>${esc(s.title)}</b><small>${esc(s.id.slice(0, 10))} · ${esc(s.mode)}${s.runner ? ` · ${esc(s.runner)}` : ""} · ${esc(s.status === "error" ? "failed" : s.status)}</small>${s.prompt ? `<span class="history-question">${esc(s.prompt)}</span>` : ""}</button>${s.status === "done" ? `<button class="pdf" type="button" data-pdf="${esc(s.id)}" title="Download the verdict as a PDF">PDF</button>` : ""}</li>`).join("")
     : '<li class="muted">No sessions yet. Convene the council once and it shows up here.</li>';
   $$("#historyList button[data-id]").forEach((b) => b.addEventListener("click", () => { $("#historyDialog").close(); replay(b.dataset.id); }));
   $("#historyDialog").showModal();
@@ -785,6 +817,10 @@ async function openHistory() {
 
 async function replay(id) {
   const j = await fetch(`/api/sessions/${encodeURIComponent(id)}`).then((x) => x.json());
+  if (!j.events?.length) {
+    toast(j.error || "The question is saved. The council has not produced a replay yet.");
+    return;
+  }
   begin(id);
   state.replaying = true;
   for (const ev of j.events) {
@@ -796,7 +832,7 @@ async function replay(id) {
 // ------------------------------------------------------------- waiting on Claude Code
 // A live council goes quiet for minutes while the seats write in parallel. Instead of a
 // frozen table, say what is happening, how long it has been, and what each seat is weighing.
-const SAME_TIME = "The advisors all write at the same time in Claude Code. Their lines play here as soon as the round is in.";
+const SAME_TIME = "The advisors' lines play here as soon as each round is saved.";
 function waitCopy(phase) {
   const n = state.setup?.mode === "quick" ? 2 : 3;
   return {

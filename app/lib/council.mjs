@@ -410,7 +410,9 @@ async function run(s) {
 
 /** The verdict's numbers, computed from the last round's cards (shared with the folder watcher). */
 export function finalNumbers(st) {
-  const last = st.rounds.at(-1);
+  // Quick councils may announce Round 3 with draft.json, then skip it.
+  // Score the latest round that actually contains seat cards.
+  const last = [...st.rounds].reverse().find((r) => st.seats.some((k) => st.cards[r]?.[k])) ?? st.rounds.at(-1);
   const finalScores = st.scores[last] || optionScores(st, last);
   const recommended = Object.entries(finalScores).sort((a, b) => (b[1].score ?? 0) - (a[1].score ?? 0))[0][0];
   const fv = st.seats.map((k) => st.cards[last][k]?.parsed.optionScores[recommended]).filter((v) => typeof v === "number");
