@@ -20,9 +20,9 @@ const GUIDE = `
       <h4>How to use the Roast Room</h4>
       <ol>
         <li><span>Type your decision here, or ask for Roast Room in Claude Desktop or Codex Desktop.</span></li>
-        <li><span>Include your options, numbers, deadline, and which way you lean.</span></li>
-        <li><span>Watch the council here as its cards and verdict are saved.</span></li>
-        <li><span>When the verdict lands, download it as a PDF.</span></li>
+        <li><span>Include your options, numbers, deadline, and which way you lean. Attach documents or images if useful.</span></li>
+        <li><span>Choose a model and effort, then press Start council. The live header keeps those choices visible.</span></li>
+        <li><span>Read the verdict, execution roadmap, and build prompt. Download the PDF, continue this thread, or start a new one.</span></li>
       </ol>
     </div>
     <div class="guide-sec">
@@ -47,10 +47,12 @@ const GUIDE = `
     <div class="guide-sec">
       <h4>Good to know</h4>
       <ul>
-        <li><span><b>Pick your council:</b> use Full or Quick here. For named seats, run the original <code>/roast-room --seats ...</code> skill in Claude Code.</span></li>
+        <li><span><b>Pick your council:</b> use Quick, Full, or Ultra here. For named seats, run <code>/roast-room --seats ...</code> in Claude Code.</span></li>
         <li><span><b>Full council:</b> 5 to 7 advisors, 3 rounds. For big calls that are hard to undo.</span></li>
         <li><span><b>Quick:</b> select the Quick option above for 4 advisors and usually 2 rounds. Uses less of your plan.</span></li>
+        <li><span><b>Ultra:</b> 9 advisors and 5 rounds, including a stress test and final vote. Expect high token use and a longer wait.</span></li>
         <li><span><b>Every council is saved.</b> Open Past sessions to replay one or download its PDF.</span></li>
+        <li><span><b>Files stay local.</b> PDF, Markdown, text, CSV, JSON, and images are accepted; audio and video are not.</span></li>
         <li><span><b>Add an advisor:</b> ask your coding assistant for <code>/newroaster</code> and a name. Change your default board with <code>/roast-room board</code>.</span></li>
       </ul>
     </div>
@@ -90,11 +92,12 @@ function drawnBust(key, shape) {
   bustCache.set(id, url);
   return url;
 }
-const ROUND_NAME = ["", "Opening", "Debate", "Vote"];
+const ROUND_NAME = ["", "Opening", "Debate", "Vote", "Stress test", "Final vote"];
 
 const state = {
   seats: [], byKey: {}, board: [], table: [], session: null, options: [], weights: {}, active: [], round: 0,
-  cards: { 1: {}, 2: {}, 3: {} }, replaying: false, verdict: null, links: [], geo: {}, setup: null, wait: null,
+  cards: { 1: {}, 2: {}, 3: {}, 4: {}, 5: {} }, replaying: false, verdict: null, links: [], geo: {}, setup: null, wait: null,
+  attachments: [], currentRequest: null,
 };
 
 // ------------------------------------------------------------- boot
@@ -137,6 +140,28 @@ function configureRunner(info) {
   updateEfforts();
 }
 
+function updateModeWarning() {
+  const ultra = $('input[name="mode"]:checked')?.value === "ultra";
+  $("#ultraWarning").hidden = !ultra;
+}
+
+function showRunIdentity(request) {
+  state.currentRequest = request || null;
+  const provider = request?.runner === "claude" ? "Claude Code" : request?.runner === "codex" ? "Codex CLI" : null;
+  if (provider) $("#providerBadge").textContent = provider;
+  for (const [id, label] of [["modelBadge", `Model: ${request?.model || "CLI default (not pinned)"}`],
+    ["effortBadge", `Effort: ${request?.effort || "CLI default (not pinned)"}`]]) {
+    $("#" + id).textContent = label;
+    $("#" + id).hidden = !request;
+  }
+}
+
+async function loadRunIdentity(id) {
+  const request = await fetch(`/api/requests/${encodeURIComponent(id)}`).then((r) => r.ok ? r.json() : null).catch(() => null);
+  if (state.session === id || state.pendingId === id) showRunIdentity(request);
+  return request;
+}
+
 function updateEfforts() {
   const selected = state.runnerOptions?.models.find((m) => m.id === $("#modelSelect").value);
   const prior = $("#effortSelect").value;
@@ -164,6 +189,7 @@ async function watchForLive() {
   if (!state.activeRequestId && ss?.pending && (state.runner === "claude" || state.runner === "codex")) {
     state.activeRequestId = ss.pending;
     $("#cancelBtn").hidden = false;
+    $("#headerStart").hidden = true;
     $("#convene").disabled = true;
   }
   const activeRequest = state.activeRequestId
@@ -190,9 +216,10 @@ async function watchForLive() {
     const request = activeRequest?.id === state.pendingId ? activeRequest
       : await fetch(`/api/requests/${encodeURIComponent(state.pendingId)}`).then((x) => x.json()).catch(() => null);
     if (request?.status === "error" || request?.status === "interrupted") {
-      $("#launchStatus").textContent = request.error || "The council stopped before writing a verdict.";
-      $("#convene").disabled = false;
       state.pendingId = null;
+      reset();
+      $("#launchStatus").hidden = false;
+      $("#launchStatus").textContent = request.error || "The council stopped before writing a verdict.";
     } else if (request?.status === "done" && !ss?.live) {
       const id = state.pendingId;
       state.pendingId = null;
@@ -212,9 +239,17 @@ function showPending(id) {
   state.pendingId = id;
   state.activeRequestId = id;
   $("#cancelBtn").hidden = false;
+  $("#headerStart").hidden = true;
   $("#convene").disabled = true;
+  $("#composer").hidden = true;
+  $("#waiting").hidden = false;
+  $("#waiting h2").textContent = "Preparing your council";
+  $("#waiting p").textContent = "The Chair is reading the question and selecting advisors. The discussion appears here when the first council file is saved.";
+  $("#waiting code").hidden = true;
+  $("#waiting .row").hidden = true;
   $("#launchStatus").hidden = false;
   $("#launchStatus").textContent = "Question saved. The Chair is preparing the council. It will appear here when the first files are ready.";
+  loadRunIdentity(id);
 }
 
 // AIS arrival: a heading types in a character at a time, blur to sharp
@@ -247,7 +282,7 @@ function renderSeats(keys) {
   state.table = want;
   const seats = want.map((k) => state.byKey[k]);
   $("#seats").innerHTML = seats.map((s, i) => `
-    <div class="seat" id="seat-${s.key}" data-seat="${s.key}" style="--d:-${(i * 1.7) % 6}s" tabindex="0" role="button" aria-label="${esc(s.name)}, ${esc(s.pillar)}. Open card.">
+    <div class="seat" id="seat-${s.key}" data-seat="${s.key}" data-name="${esc(s.short)}" style="--d:-${(i * 1.7) % 6}s" tabindex="0" role="button" aria-label="${esc(s.name)}, ${esc(s.pillar)}. Open card.">
       <div class="think" aria-hidden="true"><i></i><i></i><i></i></div>
       <div class="bust" data-shape="base">${SHAPES.map((sh) => `<img class="${sh}" src="${portrait(s.key, sh)}" alt="" draggable="false">`).join("")}</div>
     </div>`).join("");
@@ -265,6 +300,11 @@ function renderSeats(keys) {
 // middle seat is farthest (higher, smaller), the end seats nearest (lower, bigger).
 function layoutStage() {
   const stage = $("#stage");
+  if (matchMedia("(max-width: 480px)").matches) {
+    stage.style.paddingTop = "";
+    state.geo = {};
+    return;
+  }
   const W = stage.clientWidth;
   const narrow = matchMedia("(max-width: 820px)").matches;
   const H = narrow ? Math.round(W * 0.62) : stage.clientHeight;
@@ -313,7 +353,65 @@ function moveSpot(key) {
   spot.classList.add("on");
 }
 
+const ALLOWED_FILES = /\.(pdf|md|markdown|txt|csv|json|png|jpe?g|webp|gif)$/i;
+function addFiles(files) {
+  const pending = [...state.attachments];
+  for (const file of files) {
+    if (/^(audio|video)\//i.test(file.type) || /\.(mp3|wav|m4a|mp4|mov|webm|avi|ogg)$/i.test(file.name)) return toast("Audio and video files are not accepted.");
+    if (!ALLOWED_FILES.test(file.name)) return toast("Use PDF, Markdown, text, CSV, JSON, or an image.");
+    if (file.size > 10 * 1024 * 1024 || !file.size) return toast("Each file must be between 1 byte and 10 MB.");
+    if (pending.length >= 5 || pending.reduce((n, f) => n + f.size, file.size) > 20 * 1024 * 1024) return toast("Attach up to five files, 20 MB total.");
+    pending.push(file);
+  }
+  state.attachments = pending;
+  renderFiles();
+}
+
+function renderFiles() {
+  const html = state.attachments.map((f, i) => `<li>${esc(f.name)} <button type="button" data-remove="${i}" aria-label="Remove ${esc(f.name)}">×</button></li>`).join("");
+  $("#fileList").innerHTML = html;
+  $("#followupFileList").innerHTML = html;
+}
+
+async function encodeAttachments() {
+  return Promise.all(state.attachments.map(async (file) => {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return { name: file.name, type: file.type, data: btoa(binary) };
+  }));
+}
+
+async function launchQuestion(prompt, parentId = null) {
+  if (prompt.length < 10) return toast("Give the council a real question, at least a sentence.");
+  const button = parentId ? $("#followupSubmit") : $("#convene");
+  button.disabled = true;
+  try {
+    const mode = parentId ? state.currentRequest?.mode || "quick" : $('input[name="mode"]:checked').value;
+    const model = parentId ? state.currentRequest?.model || "" : $("#modelSelect").value;
+    const effort = parentId ? state.currentRequest?.effort || "" : $("#effortSelect").value;
+    const attachments = await encodeAttachments();
+    const r = await fetch("/api/council", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt, mode, model, effort, parentId, attachments }) });
+    const j = await r.json();
+    if (!r.ok) return toast(j.error || "Could not start the council.");
+    state.attachments = []; renderFiles();
+    if (parentId) $("#followupPrompt").value = "";
+    if (state.runner === "codex" || state.runner === "claude") showPending(j.id);
+    else attach(j.id);
+  } catch (error) { toast(error.message || "Could not start the council."); }
+  finally { button.disabled = false; }
+}
+
 function bindUI() {
+  $$('.mode input[name="mode"]').forEach((input) => input.addEventListener("change", updateModeWarning));
+  updateModeWarning();
+  for (const id of ["filesInput", "followupFilesInput"]) $("#" + id).addEventListener("change", (e) => { addFiles(e.target.files); e.target.value = ""; });
+  for (const id of ["dropZone", "followupDropZone"]) {
+    $("#" + id).addEventListener("dragover", (e) => { e.preventDefault(); e.currentTarget.classList.add("dragover"); });
+    $("#" + id).addEventListener("dragleave", (e) => e.currentTarget.classList.remove("dragover"));
+    $("#" + id).addEventListener("drop", (e) => { e.preventDefault(); e.currentTarget.classList.remove("dragover"); addFiles(e.dataTransfer.files); });
+  }
+  for (const id of ["fileList", "followupFileList"]) $("#" + id).addEventListener("click", (e) => { const b = e.target.closest("[data-remove]"); if (!b) return; state.attachments.splice(Number(b.dataset.remove), 1); renderFiles(); });
   $("#cancelBtn").addEventListener("click", async () => {
     const id = state.activeRequestId;
     if (!id) return;
@@ -333,19 +431,11 @@ function bindUI() {
   });
   $("#composer").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const prompt = $("#prompt").value.trim();
-    if (prompt.length < 10) return toast("Give the council a real decision, at least a sentence.");
-    const mode = $('input[name="mode"]:checked').value;
-    $("#convene").disabled = true;
-    const model = $("#modelSelect").value;
-    const effort = $("#effortSelect").value;
-    const r = await fetch("/api/council", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt, mode, model, effort }) });
-    const j = await r.json();
-    $("#convene").disabled = false;
-    if (!r.ok) return toast(j.error || "Could not start the council.");
-    if (state.runner === "codex" || state.runner === "claude") showPending(j.id);
-    else attach(j.id);
+    await launchQuestion($("#prompt").value.trim());
   });
+  $("#followupForm").addEventListener("submit", async (e) => { e.preventDefault(); await launchQuestion($("#followupPrompt").value.trim(), state.session); });
+  $("#threadNewBtn").addEventListener("click", () => { reset(); $("#prompt").value = ""; $("#prompt").focus(); window.scrollTo({ top: 0, behavior: "smooth" }); });
+  $("#threadTurns").addEventListener("click", (e) => { const b = e.target.closest("[data-thread-replay]"); if (b) replay(b.dataset.threadReplay); });
   const openFrom = (e) => { const b = e.target.closest("[data-seat]"); if (b) openCard(b.dataset.seat); };
   $("#seats").addEventListener("click", openFrom);
   $("#plates").addEventListener("click", openFrom);
@@ -360,9 +450,20 @@ function bindUI() {
       catch { toast("Copy didn't work here. Select the text and copy it."); }
     }
     if (e.target.closest("[data-pdf]")) savePdf(e.target.closest("[data-pdf]"));
+    if (e.target.closest("[data-copy-plan]")) {
+      const plan = state.verdict?.actionPlan || "";
+      const matches = [...plan.matchAll(/```(?:text|markdown)?\s*\n([\s\S]*?)```/g)];
+      try { await navigator.clipboard.writeText(matches.at(-1)?.[1]?.trim() || plan); toast("Build prompt copied."); }
+      catch { toast("Copy failed. Select the plan text and copy it."); }
+    }
+    if (e.target.closest("[data-download-plan]")) {
+      const blob = new Blob([state.verdict?.actionPlan || ""], { type: "text/markdown" });
+      const url = URL.createObjectURL(blob); const a = document.createElement("a");
+      a.href = url; a.download = `roast-room-action-plan-${state.session}.md`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
   });
   $("#historyBtn").addEventListener("click", openHistory);
-  $("#newBtn").addEventListener("click", reset);
+  $("#newBtn").addEventListener("click", () => { reset(); $("#prompt").value = ""; $("#prompt").focus(); });
   $("#verdictSheet").addEventListener("click", (e) => { if (e.target.id === "verdictSheet" || e.target.closest("[data-close]")) $("#verdictSheet").hidden = true; });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("#verdictSheet").hidden = true; });
   // Clicking the dimmed backdrop around a card, the guide, or past sessions closes it (Escape already does).
@@ -419,11 +520,21 @@ const player = {
 function reset() {
   state.es?.close();
   player.reset();
-  Object.assign(state, { session: null, options: [], weights: {}, active: [], round: 0, cards: { 1: {}, 2: {}, 3: {} }, replaying: false, verdict: null, links: [], speaking: null, setup: null, wait: null });
+  state.attachments = [];
+  renderFiles();
+  Object.assign(state, { session: null, options: [], weights: {}, active: [], round: 0, cards: { 1: {}, 2: {}, 3: {}, 4: {}, 5: {} }, replaying: false, verdict: null, links: [], speaking: null, setup: null, wait: null });
   hideWait();
   $("#stage").classList.remove("live");
+  $("#stage").classList.toggle("idle", state.runner !== "viewer");
+  $("#threadPanel").hidden = true;
+  if (!state.pendingId && !state.activeRequestId) {
+    showRunIdentity(null);
+    $("#providerBadge").textContent = state.runnerOptions?.provider || (state.runner === "api" ? "Anthropic API" : "Viewer mode");
+  }
+  $$(".ultra-step").forEach((el) => { el.hidden = true; });
   $("#topic").hidden = true;
   $("#composer").hidden = state.runner === "viewer";
+  $("#headerStart").hidden = state.runner === "viewer";
   $("#waiting").hidden = state.runner !== "viewer";
   $("#convene").disabled = Boolean(state.activeRequestId);
   $("#cancelBtn").hidden = !state.activeRequestId;
@@ -449,9 +560,12 @@ function reset() {
 function begin(id) {
   reset();
   state.session = id;
+  $("#stage").classList.remove("idle");
+  loadRunIdentity(id);
   $("#composer").hidden = true;
+  $("#headerStart").hidden = true;
   $("#waiting").hidden = true;
-  $("#newBtn").hidden = false;
+  $("#newBtn").hidden = true;
   $("#playbar").hidden = false;
   $("#panelHead").textContent = "Key points";
   $("#feed").innerHTML = '<div class="empty">One line per seat as the council talks. Click a seat to read its full card.</div>';
@@ -475,8 +589,8 @@ function attach(id) {
 }
 
 // ------------------------------------------------------------- event handling
-const STEP_OF = { setup: "setup", round1: "round1", cruxes: "cruxes", round2: "round2", draft: "round3", round3: "round3", skip3: "round3", verdict: "verdict" };
-const ORDER = ["setup", "round1", "cruxes", "round2", "round3", "verdict"];
+const STEP_OF = { setup: "setup", round1: "round1", cruxes: "cruxes", round2: "round2", draft: "round3", round3: "round3", round4: "round4", round5: "round5", skip3: "round3", verdict: "verdict" };
+const ORDER = ["setup", "round1", "cruxes", "round2", "round3", "round4", "round5", "verdict"];
 
 function setStep(step) {
   const idx = ORDER.indexOf(step);
@@ -533,7 +647,8 @@ async function onSetup(ev) {
     const w = ev.weights[s.key]?.weight || 1;
     pl.title = `Weight ${w} of 3: ${ev.weights[s.key]?.reason || ""}`;
   }
-  chairSays(ev.title, { tag: ev.mode === "quick" ? "Quick council" : "Full council" });
+  $$(".ultra-step").forEach((el) => { el.hidden = ev.mode !== "ultra"; });
+  chairSays(ev.title, { tag: ev.mode === "quick" ? "Quick council" : ev.mode === "ultra" ? "Ultra council" : "Full council" });
 }
 
 function updateOptions(scores) {
@@ -552,7 +667,7 @@ function onRoundStart(round) {
   state.links = [];
   drawLinks();
   $("#cruxes").hidden = true;
-  chairSays(`${["", "Round 1: opening positions", "Round 2: the debate", "Round 3: the vote"][round]}`, { dots: true, tag: "The floor is open" });
+  chairSays(`${["", "Round 1: opening positions", "Round 2: the debate", "Round 3: preliminary vote", "Round 4: stress test", "Round 5: final vote"][round]}`, { dots: true, tag: "The floor is open" });
 }
 
 // ------------------------------------------------------------- talking
@@ -685,6 +800,8 @@ async function onSeatDone(ev) {
       drawLinks();
     }
     sub = /^yes/i.test(parsed.moved) ? "Changed position" : "";
+  } else if (round === 4) {
+    tag = "Stress tests the resolution";
   } else {
     const v = parsed.vote || "endorse";
     tag = `Votes ${v}`;
@@ -695,9 +812,9 @@ async function onSeatDone(ev) {
 
   const pl = $(`#plate-${seat}`);
   const chip = $(".chip", pl);
-  chip.hidden = round === 3; // the vote stamp says it
+  chip.hidden = round === 3 || round === 5; // the vote stamp says it
   chip.className = "chip";
-  if (round === 3) {
+  if (round === 3 || round === 5) {
     const v = parsed.vote || "endorse";
     chip.textContent = v;
     chip.classList.add(v);
@@ -788,14 +905,14 @@ function feedCard(round, seat, parsed) {
   d.dataset.round = round;
   const top = topOption(parsed.optionScores);
   const tgt = parsed.disagreeWith ? state.byKey[parsed.disagreeWith]?.short : "";
-  const what = round === 1 ? `${stanceWord(parsed.stance)}${top ? `, backs ${top.id}` : ""}` : round === 2 ? (tgt ? `vs ${tgt}` : "Debate") : `Votes ${parsed.vote || "endorse"}`;
+  const what = round === 1 ? `${stanceWord(parsed.stance)}${top ? `, backs ${top.id}` : ""}` : round === 2 ? (tgt ? `vs ${tgt}` : "Debate") : round === 4 ? "Stress test" : `Votes ${parsed.vote || "endorse"}`;
   d.innerHTML = `<img class="av" src="${portrait(seat)}" alt=""><div><div class="h">${esc(s.short)}<span class="r">${esc(what)}</span></div><p>${esc(lineFor(round, parsed, 105))}</p></div>`;
   feedAppend(d);
 }
 
 function openCard(seat, round) {
   const s = state.byKey[seat];
-  const rounds = [3, 2, 1].filter((r) => state.cards[r][seat]);
+  const rounds = [5, 4, 3, 2, 1].filter((r) => state.cards[r][seat]);
   const r = round || rounds[0];
   const c = state.cards[r]?.[seat];
   $("#cardBody").innerHTML = `
@@ -818,6 +935,7 @@ function labelClass(l) { return /DON'T/.test(l) ? "dont" : /RESHAPE/.test(l) ? "
 function onVerdict(ev) {
   const v = ev.verdict;
   state.verdict = ev;
+  $("#newBtn").hidden = false;
   if (state.activeRequestId === state.session) {
     state.activeRequestId = null;
     $("#cancelBtn").hidden = true;
@@ -864,6 +982,7 @@ function onVerdict(ev) {
         ${v.amendments?.length ? `<div class="v-sec v-wide"><h3>Amendments</h3><ul>${v.amendments.map((a) => `<li><b>${esc(seatName(a.seat))}:</b> ${esc(a.amendment)} <span class="tag">${a.adopted ? "Adopted" : "Not adopted"}: ${esc(a.reason)}</span></li>`).join("")}</ul></div>` : ""}
       </div>
     </details>
+    ${ev.actionPlan ? `<section class="v-sec v-wide"><h3>Execution roadmap and build prompt</h3><div class="actions"><button class="pill" type="button" data-copy-plan>Copy build prompt</button><button class="ghost" type="button" data-download-plan>Download action plan</button></div><pre class="action-plan">${esc(ev.actionPlan)}</pre></section>` : `<p class="muted">This older session has no saved action plan.</p>`}
     <div class="v-foot"><span class="muted">${esc(v.disclaimer)}</span><button class="ghost" data-close>Back to the table</button></div>`;
   $("#verdictBody").innerHTML = html;
   const plate = $("#plate");
@@ -876,7 +995,23 @@ function onVerdict(ev) {
   f.className = "feed-note";
   f.innerHTML = `<b>Verdict: ${esc(v.label)}.</b> ${esc(firstSentences(clean(v.call), 160))}`;
   feedAppend(f);
+  renderThread(state.session);
   setTimeout(() => { if (state.verdict === ev) $("#verdictSheet").hidden = false; }, 1600);
+}
+
+async function renderThread(id) {
+  const current = await fetch(`/api/requests/${encodeURIComponent(id)}`).then((r) => r.ok ? r.json() : null).catch(() => null);
+  if (state.session !== id || !current || !["claude", "codex"].includes(current.runner)) return;
+  showRunIdentity(current);
+  const list = await fetch("/api/sessions").then((r) => r.json()).catch(() => ({ sessions: [] }));
+  const turns = list.sessions.filter((s) => (s.threadId || s.id) === (current.threadId || current.id)).sort((a, b) => (a.turn || 1) - (b.turn || 1));
+  const details = await Promise.all(turns.map((t) => fetch(`/api/sessions/${encodeURIComponent(t.id)}`).then((r) => r.json()).catch(() => null)));
+  if (state.session !== id) return;
+  $("#threadTurns").innerHTML = turns.map((t, i) => {
+    const result = details[i]?.events?.findLast((e) => e.type === "verdict")?.verdict?.call;
+    return `<div class="thread-turn"><small>Turn ${t.turn || 1} · ${esc(t.status)} · ${esc(t.model || "CLI default")} · ${esc(t.effort || "CLI default")} effort</small><p><b>You:</b> ${esc(t.prompt || t.title)}</p>${result ? `<p><b>Council:</b> ${esc(result)}</p>` : ""}${t.id !== id && t.status === "done" ? `<button type="button" class="ghost" data-thread-replay="${esc(t.id)}">Replay turn</button>` : ""}</div>`;
+  }).join("");
+  $("#threadPanel").hidden = false;
 }
 
 // ------------------------------------------------------------- history + replay
@@ -908,12 +1043,14 @@ async function replay(id) {
 // frozen table, say what is happening, how long it has been, and what each seat is weighing.
 const SAME_TIME = "The advisors' lines play here as soon as each round is saved.";
 function waitCopy(phase) {
-  const n = state.setup?.mode === "quick" ? 2 : 3;
+  const n = state.setup?.mode === "quick" ? (phase === "round3" || state.round >= 3 ? 3 : 2) : state.setup?.mode === "ultra" ? 5 : 3;
   return {
     setup: ["Setting the table", "The Chair is seating the council.", ""],
     round1: ["Round 1 of " + n, "The advisors are writing their opening positions.", SAME_TIME],
     round2: ["Round 2 of " + n, "The advisors are reading each other's openings and firing back.", SAME_TIME],
     round3: ["Round 3 of " + n, "The advisors are voting on the Chair's proposal.", SAME_TIME],
+    round4: ["Round 4 of " + n, "The advisors are stress testing the proposal and its assumptions.", SAME_TIME],
+    round5: ["Round 5 of " + n, "The advisors are casting their final votes.", SAME_TIME],
     cruxes: ["Between rounds", "The Chair is reading the openings and finding where they disagree.", "The fight shows up here next, then the debate starts."],
     draft: ["Between rounds", "The Chair is turning the debate into a proposal for the vote.", "Next, every advisor votes on it."],
     skip3: ["Last step", "The Chair is scoring the room and writing the verdict.", "When it lands, you can download it as a PDF."],

@@ -7,7 +7,9 @@ import { APP_ROOT, SESSIONS_DIR, env } from "./lib/env.mjs";
 const BASE = "http://127.0.0.1:4730";
 const tools = [
   { name: "roast_room_start", description: "Save a business decision and start a Roast Room council. Returns a session ID and the local room URL. The council runs asynchronously; call roast_room_wait until it finishes, then report the verdict.",
-    inputSchema: { type: "object", properties: { question: { type: "string", description: "The decision, options, numbers, deadline, and leaning. At least one sentence." }, mode: { type: "string", enum: ["quick", "full"], description: "Quick uses four advisors; full uses the complete council." }, model: { type: "string", description: "Optional model from this room's provider catalog. Omit to use the CLI default." }, effort: { type: "string", description: "Optional reasoning effort supported by the selected model. Omit to use the CLI default." } }, required: ["question"] } },
+    inputSchema: { type: "object", properties: { question: { type: "string", description: "The decision, options, numbers, deadline, and leaning. At least one sentence." }, mode: { type: "string", enum: ["quick", "full", "ultra"], description: "Quick uses four advisors and usually two rounds; Full uses five to seven and three rounds; Ultra uses nine and five rounds with very high token use." }, model: { type: "string", description: "Optional model from this room's provider catalog. Omit to use the CLI default." }, effort: { type: "string", description: "Optional reasoning effort supported by the selected model. Omit to use the CLI default." } }, required: ["question"] } },
+  { name: "roast_room_continue", description: "Continue a completed Roast Room thread with a follow-up question. Saves a new turn linked to the prior council and carries its verdict and action plan into context.",
+    inputSchema: { type: "object", properties: { id: { type: "string", description: "The completed turn to continue." }, question: { type: "string", description: "The follow-up question." }, mode: { type: "string", enum: ["quick", "full", "ultra"] } }, required: ["id", "question"] } },
   { name: "roast_room_cancel", description: "Stop a running Claude Code or Codex CLI council immediately. The saved question remains in history.",
     inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
   { name: "roast_room_status", description: "Check whether a saved Roast Room question is running, done, cancelled, or failed.",
@@ -66,6 +68,14 @@ async function call(name, args) {
       body: JSON.stringify({ prompt: args.question, mode: args.mode || "full", model: args.model || "", effort: args.effort || "", source: process.env.ROAST_ROOM_CLIENT || "desktop" }) });
     return { ...result, room: BASE, note: "The question is saved. The council runs asynchronously; check status or open the room." };
   }
+  if (name === "roast_room_continue") {
+    const parent = await request(`/api/requests/${encodeURIComponent(args.id)}`);
+    if (parent.status !== "done") throw new Error("Continue a completed council turn.");
+    const result = await request("/api/council", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: args.question, parentId: parent.id, mode: args.mode || parent.mode,
+        model: parent.model || "", effort: parent.effort || "", source: process.env.ROAST_ROOM_CLIENT || "desktop" }) });
+    return { ...result, threadId: parent.threadId || parent.id, turn: (parent.turn || 1) + 1, room: BASE };
+  }
   if (name === "roast_room_cancel") {
     const result = await request(`/api/requests/${encodeURIComponent(args.id)}/cancel`, { method: "POST" });
     return { ...result, room: BASE, note: "The council was cancelled. Its question remains saved." };
@@ -83,18 +93,19 @@ async function call(name, args) {
       if (r.status !== "running") break;
       await new Promise((resolve) => setTimeout(resolve, 2000));
     } while (Date.now() < until);
-    return { id: r.id, status: r.status, question: r.prompt, verdict: r.verdict, error: r.error, room: BASE };
+    return { id: r.id, status: r.status, question: r.prompt, verdict: r.verdict, actionPlan: r.actionPlan, error: r.error, room: BASE };
   }
   if (name === "roast_room_history") {
     const r = await request("/api/sessions");
     return r.sessions.slice(0, Math.min(50, Math.max(1, Number(args.limit) || 20)))
       .map((s) => ({ id: s.id, question: s.prompt || s.title, status: s.status, mode: s.mode,
-        runner: s.runner || null, model: s.model || null, effort: s.effort || null, source: s.source || "skill" }));
+        runner: s.runner || null, model: s.model || null, effort: s.effort || null, threadId: s.threadId || s.id,
+        turn: s.turn || 1, source: s.source || "skill" }));
   }
   if (name === "roast_room_result") {
     const r = await request(`/api/requests/${encodeURIComponent(args.id)}`);
     return { id: r.id, status: r.status, question: r.prompt, runner: r.runner, model: r.model, effort: r.effort,
-      verdict: r.verdict, answer: r.answer, error: r.error, room: BASE };
+      verdict: r.verdict, actionPlan: r.actionPlan, answer: r.answer, error: r.error, room: BASE };
   }
   throw new Error(`Unknown tool: ${name}`);
 }
@@ -111,7 +122,7 @@ input.on("line", async (line) => {
   const { id, method, params = {} } = message;
   try {
     if (method === "initialize") return reply(id, { protocolVersion: params.protocolVersion || "2025-06-18",
-      capabilities: { tools: { listChanged: false } }, serverInfo: { name: "roast-room", version: "1.1.0" } });
+      capabilities: { tools: { listChanged: false } }, serverInfo: { name: "roast-room", version: "1.2.0" } });
     if (method === "notifications/initialized") return;
     if (method === "ping") return reply(id, {});
     if (method === "tools/list") return reply(id, { tools });

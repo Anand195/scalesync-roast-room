@@ -211,6 +211,17 @@ export async function downloadVerdictPdf({ setup, verdict: ev, byKey, id }) {
     if (v.kill_criteria) bullet("Kill it if", v.kill_criteria);
   }
   if (v.fights?.length) { section("Where they fought"); for (const f of v.fights.slice(0, 3)) bullet(f.crux, f.story); }
+  if (ev.actionPlan) {
+    section("Execution roadmap and build prompt", 40);
+    for (const raw of ev.actionPlan.split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line || line === "```") continue;
+      if (/^#{1,4}\s/.test(line)) {
+        ensure(32); y += 8;
+        para(line.replace(/^#+\s*/, ""), { size: 11, style: "bold", color: C.ink, gap: 3 });
+      } else para(line.replace(/^[-*]\s+/, "• "), { size: 9, gap: 2 });
+    }
+  }
 
   // ---------------------------------------------------------------- footer on every page
   const pages = doc.getNumberOfPages();

@@ -23,11 +23,16 @@
       <li data-step="cruxes">Fault lines</li>
       <li data-step="round2">Debate</li>
       <li data-step="round3">Vote</li>
+      <li data-step="round4" class="ultra-step" hidden>Stress test</li>
+      <li data-step="round5" class="ultra-step" hidden>Final vote</li>
       <li data-step="verdict">Verdict</li>
     </ol>
     <div class="top-actions">
       <span class="provider-badge" id="providerBadge" aria-label="Current provider">Connecting…</span>
+      <span class="run-badge" id="modelBadge" hidden></span>
+      <span class="run-badge" id="effortBadge" hidden></span>
       <span class="usage" id="usage" title="Tokens used by this app since it started"></span>
+      <button class="convene header-start" id="headerStart" type="submit" form="composer" hidden>Start council</button>
       <button class="ghost cancel-council" id="cancelBtn" type="button" hidden>Cancel council</button>
       <button class="ghost" id="guideBtn" type="button">How it works</button>
       <button class="ghost" id="historyBtn" type="button">Past sessions</button>
@@ -62,25 +67,6 @@
             <div class="row"><button class="ghost" type="button" id="waitGuide">What to put in your question</button><button class="ghost" type="button" id="waitHistory">Watch a past council</button></div>
           </div>
 
-          <form class="composer" id="composer" hidden>
-            <h2 data-type>What decision do you need help with?</h2>
-            <textarea id="prompt" rows="3" placeholder="Give them the decision, your options, a few numbers (revenue, cash, team), and which way you're leaning." required minlength="10"></textarea>
-            <div class="samples" id="samples"></div>
-            <div class="runner-controls" id="runnerControls" hidden>
-              <label>Model <select id="modelSelect" aria-label="Model"></select></label>
-              <label>Effort <select id="effortSelect" aria-label="Reasoning effort"></select></label>
-            </div>
-            <div class="composer-row">
-              <div class="mode" role="radiogroup" aria-label="Council size">
-                <label><input type="radio" name="mode" value="full" checked><span>Full council <small>7 seats, 3 rounds</small></span></label>
-                <label><input type="radio" name="mode" value="quick"><span>Quick <small>4 seats, 2 rounds</small></span></label>
-              </div>
-              <button class="convene" type="submit" id="convene">Convene the council</button>
-            </div>
-            <p class="muted" id="launchStatus" role="status" hidden></p>
-            <p class="muted" id="runnerNote">Your question and council files are saved locally. This room uses the signed-in Codex CLI.</p>
-          </form>
-
           <div class="caption" id="caption" hidden>
             <div class="cap-head">
               <span class="cap-av" id="capAv"></span>
@@ -114,6 +100,47 @@
           <button type="button" class="skip" id="skipBtn">Skip ahead</button>
         </div>
       </div>
+      <form class="composer question-dock" id="composer" hidden>
+        <h2 id="questionHeading" data-type>What decision do you need help with?</h2>
+        <textarea id="prompt" rows="3" aria-labelledby="questionHeading" placeholder="Give them the decision, your options, a few numbers (revenue, cash, team), and which way you're leaning." required minlength="10"></textarea>
+        <div class="samples" id="samples"></div>
+        <div class="attachment-area" id="dropZone">
+          <label for="filesInput">Drop files here or <span>choose files</span></label>
+          <input id="filesInput" type="file" multiple accept=".pdf,.md,.markdown,.txt,.csv,.json,.png,.jpg,.jpeg,.webp,.gif,application/pdf,text/*,image/png,image/jpeg,image/webp,image/gif">
+          <small>PDF, Markdown, text, CSV, JSON, and images. Up to 5 files, 10 MB each; no audio or video.</small>
+          <ul id="fileList" aria-live="polite"></ul>
+        </div>
+        <div class="runner-controls" id="runnerControls" hidden>
+          <label>Model <select id="modelSelect" aria-label="Model"></select></label>
+          <label>Effort <select id="effortSelect" aria-label="Reasoning effort"></select></label>
+        </div>
+        <div class="composer-row">
+          <div class="mode" role="radiogroup" aria-label="Council size">
+            <label><input type="radio" name="mode" value="full" checked><span>Full council <small>7 seats, 3 rounds</small></span></label>
+            <label><input type="radio" name="mode" value="quick"><span>Quick <small>4 seats, usually 2 rounds</small></span></label>
+            <label><input type="radio" name="mode" value="ultra"><span>Ultra <small>9 seats, 5 rounds</small></span></label>
+          </div>
+          <p class="ultra-warning" id="ultraWarning" role="note" hidden><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 22 21H2L12 3Z"/><path d="M12 9v5m0 3v1" stroke-linecap="round"/></svg><span><strong>Ultra uses a high number of tokens.</strong> Nine advisors complete five rounds. Expect a long run and substantially more usage than Full or Quick.</span></p>
+          <button class="convene" type="submit" id="convene">Convene the council</button>
+        </div>
+        <p class="muted" id="launchStatus" role="status" hidden></p>
+        <p class="muted" id="runnerNote">Your question and council files are saved locally.</p>
+      </form>
+      <section class="thread-panel" id="threadPanel" hidden aria-label="Conversation thread">
+        <h2>Conversation</h2>
+        <div id="threadTurns"></div>
+        <form id="followupForm">
+          <label for="followupPrompt">Continue with this council</label>
+          <textarea id="followupPrompt" rows="3" placeholder="Ask for a deeper feature specification, challenge an assumption, or refine the roadmap." required minlength="10"></textarea>
+          <div class="attachment-area" id="followupDropZone">
+            <label for="followupFilesInput">Drop more files here or <span>choose files</span></label>
+            <input id="followupFilesInput" type="file" multiple accept=".pdf,.md,.markdown,.txt,.csv,.json,.png,.jpg,.jpeg,.webp,.gif,application/pdf,text/*,image/png,image/jpeg,image/webp,image/gif">
+            <small>PDF, Markdown, text, CSV, JSON, and images; no audio or video.</small>
+            <ul id="followupFileList" aria-live="polite"></ul>
+          </div>
+          <div class="thread-actions"><button class="convene" type="submit" id="followupSubmit">Continue this thread</button><button class="ghost" type="button" id="threadNewBtn">Start a new thread</button></div>
+        </form>
+      </section>
     </section>
 
     <aside class="panel" aria-label="Key points">

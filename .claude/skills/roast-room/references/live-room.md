@@ -14,6 +14,9 @@ The room is optional. Write these files anyway; they cost a few lines and the co
 | Round 2 cards back | `round-2.md` |
 | With `draft-resolution.md` | `draft.json` (skip in quick mode when Round 3 is skipped) |
 | Round 3 cards back | `round-3.md` |
+| Ultra Round 4 stress tests back | `round-4.md` |
+| Ultra Round 5 final votes back | `round-5.md` |
+| After `verdict.md`, before the final JSON | `action-plan.md` (ScaleSync execution roadmap and copy-paste build prompt) |
 | Last, after `verdict.md` | `verdict.json` |
 
 ## council.json
@@ -38,7 +41,7 @@ The room is optional. Write these files anyway; they cost a few lines and the co
 }
 ```
 
-`mode` is `full` or `quick`. `seats` lists only the seats at the table. Give every seat at the table a weight (1 to 3). Option labels stay short: under 50 characters.
+`mode` is `full`, `quick`, or `ultra`. Ultra requires exactly nine seats and all five `round-N.md` files. `seats` lists only the seats at the table. Give every seat at the table a weight (1 to 3). Option labels stay short: under 50 characters.
 
 ## cruxes.json
 

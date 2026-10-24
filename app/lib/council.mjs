@@ -58,7 +58,7 @@ const optLine = (st) => st.options.map((o) => `${o.id} n/10`).join(" · ");
 
 function round1Prompt(st, seat) {
   const w = st.weights[seat.key];
-  return `ROAST ROOM COUNCIL, ROUND 1 OF 3: OPENING POSITION
+  return `ROAST ROOM COUNCIL, ROUND 1 OF ${st.mode === "ultra" ? 5 : 3}: OPENING POSITION
 
 You hold the ${seat.short.toUpperCase()} seat (${seat.pillar}).
 
@@ -97,7 +97,7 @@ function cardsBlock(st, round) {
 function round2Prompt(st, seat) {
   const cr = st.cruxes.map((c, i) => `${i + 1}. ${c.question} (${c.sides.map((x) => `${x.position}: ${x.seats.map((k) => byKey[k]?.short || k).join(", ")}`).join("; ")})`).join("\n");
   const push = st.pressure?.[seat.key] ? `\nFor you specifically: ${st.pressure[seat.key]}\n` : "";
-  return `ROAST ROOM COUNCIL, ROUND 2 OF 3: DEBATE
+  return `ROAST ROOM COUNCIL, ROUND 2 OF ${st.mode === "ultra" ? 5 : 3}: DEBATE
 
 You hold the ${seat.short.toUpperCase()} seat.
 
@@ -129,7 +129,7 @@ Rules: engage the actual arguments on the table. Move only for a better argument
 
 function round3Prompt(st, seat) {
   const d = st.draft;
-  return `ROAST ROOM COUNCIL, ROUND 3 OF 3: VOTE ON THE DRAFT RESOLUTION
+  return `ROAST ROOM COUNCIL, ROUND 3 OF ${st.mode === "ultra" ? 5 : 3}: VOTE ON THE DRAFT RESOLUTION
 
 You hold the ${seat.short.toUpperCase()} seat.
 
@@ -157,6 +157,14 @@ FINAL SCORE: n/10   (your support for the draft resolution as written)
 FINAL PILLAR SCORE: n/10
 AMENDMENT OR DISSENT: one or two sentences. Blank if you endorse.
 ONE LINE FOR THE FOUNDER: the thing from your pillar they must not forget.`;
+}
+
+function round4Prompt(st, seat) {
+  return `ROAST ROOM COUNCIL, ROUND 4 OF 5: STRESS TEST\n\nYou hold the ${seat.short.toUpperCase()} seat. Read the brief, the Chair's draft, and every Round 3 vote. Challenge the most consequential assumption and the strongest remaining dissent. Propose one checkable amendment or defend the draft.\n\nTHE BRIEF\n${briefBlock(st)}\n\nDRAFT\n${JSON.stringify(st.draft)}\n\nROUND 3 VOTES\n${cardsBlock(st, 3)}\n\nAnswer under 220 words in this shape:\nSEAT: ${seat.short.toUpperCase()}\nI CHALLENGE: the highest-impact untested claim and whose claim it is.\nSTRESS TEST: a concrete test with a pass/fail threshold.\nI CONCEDE: the best opposing point.\nSTANCE: Strong yes | Yes | Conditional yes | No | Strong no\nOPTION SCORES: ${optLine(st)}\nPILLAR SCORE: n/10\nCONFIDENCE: n/5\nRUIN RISK: none | possible | likely\nAMENDMENT OR DISSENT: one checkable change or the strongest objection.\nONE LINE FOR THE FOUNDER: your current call.`;
+}
+
+function round5Prompt(st, seat) {
+  return `ROAST ROOM COUNCIL, ROUND 5 OF 5: FINAL VOTE\n\nYou hold the ${seat.short.toUpperCase()} seat. Read the brief, the draft and all Round 4 stress tests. Cast your final independent vote. Do not agree merely because the room agrees.\n\nTHE BRIEF\n${briefBlock(st)}\n\nDRAFT\n${JSON.stringify(st.draft)}\n\nROUND 4 STRESS TESTS\n${cardsBlock(st, 4)}\n\nAnswer under 160 words in this shape:\nSEAT: ${seat.short.toUpperCase()}\nVOTE: Endorse | Endorse with amendment | Dissent\nOPTION SCORES: ${optLine(st)}\nFINAL SCORE: n/10\nFINAL PILLAR SCORE: n/10\nAMENDMENT OR DISSENT: one or two sentences.\nONE LINE FOR THE FOUNDER: the most important remaining condition.`;
 }
 
 // ---------------------------------------------------------------- scoring
@@ -209,7 +217,7 @@ Set up the room.
 - assumptions: any number or fact you had to assume to make the brief usable, each one line. Keep it to what matters.
 - weights: one entry for every seat, weight 1 to 3 (3 = the decision lives in this pillar, 2 = materially affected, 1 = touched at the edges). Exactly one or two seats at 3. Reason in one line.
 - quick_seats: the four seats for a quick council: the two highest-weight seats, the seat that guards the downside (money, capital, or risk) if it is not already in, and the seat most likely to disagree with the others.
-- seats: ${st.pick ? "the board for a full council, five to seven seats: every seat at weight 2 or 3, the seat that guards the downside, and the seat most likely to disagree. Leave out seats at weight 1 unless they are the downside or dissent seat." : "every seat (the board is fixed)."}`,
+- seats: ${st.mode === "ultra" ? "exactly nine distinct seats: include the default seven, then pick two from the remaining roster whose pillars bring the strongest relevant challenge. Do not seat all twelve." : st.pick ? "the board for a full council, five to seven seats: every seat at weight 2 or 3, the seat that guards the downside, and the seat most likely to disagree. Leave out seats at weight 1 unless they are the downside or dissent seat." : "every seat (the board is fixed)."}`,
   });
 }
 
@@ -283,7 +291,7 @@ CRUXES: ${JSON.stringify(st.cruxes)}
 ROUND 2 CARDS
 ${cardsBlock(st, 2)}
 
-${lastRound === 3 ? `DRAFT RESOLUTION\n${JSON.stringify(st.draft)}\n\nROUND 3 VOTES\n${cardsBlock(st, 3)}` : "(Quick mode: Round 3 skipped.)"}
+${lastRound >= 3 ? `DRAFT RESOLUTION\n${JSON.stringify(st.draft)}\n\nROUND 3 VOTES\n${cardsBlock(st, 3)}${lastRound === 5 ? `\n\nROUND 4 STRESS TESTS\n${cardsBlock(st, 4)}\n\nROUND 5 FINAL VOTES\n${cardsBlock(st, 5)}` : ""}` : "(Quick mode: Round 3 skipped.)"}
 
 FINAL WEIGHTED OPTION SCORES (computed, do not change): ${JSON.stringify(Object.fromEntries(Object.entries(finalScores).map(([k, v]) => [k, v.score])))}
 Recommended option by score: ${recommended}. Band for it: ${bandFor(finalScores[recommended]?.score)}.
@@ -295,7 +303,7 @@ Write the verdict for the founder.
 - why: 3 to 5 arguments that carried the room, each tagged with the seat and the framework.
 - fights: one entry per crux: who was on each side, who moved and why, how it resolved.
 - minority: the strongest losing view; quote copies the seat's own words exactly from a card; would_have_to_be_true in one line. If unanimous, use the least-tested assumption instead.
-- amendments: every Round 3 amendment, adopted or not, with the reason (empty in quick mode). Adopt when no seat objected or the argument went unanswered.
+- amendments: every amendment in the latest vote round, adopted or not, with the reason (empty in quick mode). Adopt when no seat objected or the argument went unanswered.
 - conditions, next_steps (with when), cheapest_test, kill_criteria, revisit: final, merged, checkable.`,
   });
 }
@@ -345,8 +353,9 @@ async function run(s) {
   // "default" seats the saved default board; "ask" and "auto" let the Chair pick from every seat
   // (there is no one to ask in the room, so "ask" picks like "auto" here)
   loadRoster();
+  if (s.mode === "ultra" && SEATS.length < 9) throw new Error(`Ultra needs 9 available advisors; found ${SEATS.length}.`);
   const pick = BOARD.mode !== "default";
-  const st = (s.state = { prompt: s.prompt, mode: s.mode, pick, board: pick ? SEATS.map((x) => x.key) : defaultBoard(), cards: { 1: {}, 2: {}, 3: {} }, scores: {}, rounds: [] });
+  const st = (s.state = { prompt: s.prompt, mode: s.mode, pick, board: s.mode === "ultra" ? SEATS.map((x) => x.key) : pick ? SEATS.map((x) => x.key) : defaultBoard(), cards: { 1: {}, 2: {}, 3: {}, 4: {}, 5: {} }, scores: {}, rounds: [] });
   emit(s, "phase", { phase: "setup", label: "The Chair is reading your question" });
   const setup = await chairSetup(st);
   Object.assign(st, {
@@ -357,7 +366,8 @@ async function run(s) {
   for (const w of setup.weights) if (st.weights[w.seat]) st.weights[w.seat] = { weight: Math.max(1, Math.min(3, w.weight)), reason: w.reason };
   const picked = [...new Set(setup.seats || [])].filter((k) => st.board.includes(k)).slice(0, 9);
   const full = pick && picked.length >= 3 ? picked : st.board.slice(0, 9);
-  st.seats = s.mode === "quick" ? [...new Set(setup.quick_seats)].filter((k) => st.board.includes(k)).slice(0, 4) : full;
+  st.seats = s.mode === "quick" ? [...new Set(setup.quick_seats)].filter((k) => st.board.includes(k)).slice(0, 4) :
+    s.mode === "ultra" ? [...new Set([...defaultBoard(), ...picked, ...st.board])].slice(0, 9) : full;
   if (s.mode === "quick" && st.seats.length < 4) {
     for (const k of full) if (st.seats.length < 4 && !st.seats.includes(k)) st.seats.push(k);
   }
@@ -396,6 +406,15 @@ async function run(s) {
     emit(s, "phase", { phase: "skip3", label: `Quick mode: spread ${spread} and no ruin risk, so the vote round is skipped` });
   }
 
+  if (s.mode === "ultra") {
+    emit(s, "phase", { phase: "round4", label: "Round 4: stress testing the resolution" });
+    st.rounds.push(4);
+    await roundAll(s, st, 4, round4Prompt);
+    emit(s, "phase", { phase: "round5", label: "Round 5: final vote" });
+    st.rounds.push(5);
+    await roundAll(s, st, 5, round5Prompt);
+  }
+
   const { last, finalScores, recommended, spreadF, confidence, support, votes } = finalNumbers(st);
 
   emit(s, "phase", { phase: "verdict", label: "The Chair is writing the verdict" });
@@ -416,15 +435,15 @@ export function finalNumbers(st) {
   const finalScores = st.scores[last] || optionScores(st, last);
   const recommended = Object.entries(finalScores).sort((a, b) => (b[1].score ?? 0) - (a[1].score ?? 0))[0][0];
   const fv = st.seats.map((k) => st.cards[last][k]?.parsed.optionScores[recommended]).filter((v) => typeof v === "number");
-  const confs = st.seats.map((k) => st.cards[2][k]?.parsed.confidence ?? st.cards[1][k]?.parsed.confidence).filter((v) => typeof v === "number");
+  const confs = st.seats.map((k) => st.cards[4]?.[k]?.parsed.confidence ?? st.cards[2][k]?.parsed.confidence ?? st.cards[1][k]?.parsed.confidence).filter((v) => typeof v === "number");
   const spreadF = fv.length ? Math.max(...fv) - Math.min(...fv) : 0;
   const confidence = confs.length ? Math.max(1, Math.min(10, Math.round((confs.reduce((a, b) => a + b, 0) / confs.length) * 2) - (spreadF >= 5 ? 1 : 0))) : null;
-  const support = last === 3 ? (() => {
+  const support = [3, 5].includes(last) ? (() => {
     let n = 0, d = 0;
-    for (const k of st.seats) { const v = st.cards[3][k]?.parsed.finalScore; if (typeof v === "number") { n += v * st.weights[k].weight; d += st.weights[k].weight; } }
+    for (const k of st.seats) { const v = st.cards[last][k]?.parsed.finalScore; if (typeof v === "number") { n += v * st.weights[k].weight; d += st.weights[k].weight; } }
     return d ? Math.round((n / d) * 10) / 10 : null;
   })() : null;
-  const votes = last === 3 ? st.seats.reduce((acc, k) => { const v = st.cards[3][k]?.parsed.vote || "endorse"; acc[v] = (acc[v] || 0) + 1; return acc; }, {}) : null;
+  const votes = [3, 5].includes(last) ? st.seats.reduce((acc, k) => { const v = st.cards[last][k]?.parsed.vote || "endorse"; acc[v] = (acc[v] || 0) + 1; return acc; }, {}) : null;
   return { last, finalScores, recommended, spreadF, confidence, support, votes };
 }
 
@@ -435,7 +454,7 @@ export function verdictSeats(st, last) {
     optionScores: st.cards[last][k]?.parsed.optionScores,
     pillar: st.cards[last][k]?.parsed.pillar ?? st.cards[2][k]?.parsed.pillar,
     moved: st.cards[2][k]?.parsed.moved,
-    oneLine: st.cards[3][k]?.parsed.oneLine || st.cards[2][k]?.parsed.stance,
+    oneLine: st.cards[last][k]?.parsed.oneLine || st.cards[2][k]?.parsed.stance,
   }));
 }
 

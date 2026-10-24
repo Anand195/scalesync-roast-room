@@ -7,8 +7,8 @@ import { loadRoster, parseOptionScores } from "../lib/seats.mjs";
 import { finalNumbers } from "../lib/council.mjs";
 import { runnerOptions, validateRunnerSelection } from "../lib/runner-options.mjs";
 
-const code = ["app/server.mjs", "app/mcp.mjs", "app/lib/local-runner.mjs", "app/lib/runner-options.mjs", "app/lib/watch.mjs",
-  "app/scripts/launch.mjs", "app/scripts/test-runner.mjs", "app/public/app.js", "app/public/pdf.js"];
+const code = ["app/server.mjs", "app/mcp.mjs", "app/lib/local-runner.mjs", "app/lib/attachments.mjs", "app/lib/runner-options.mjs", "app/lib/watch.mjs",
+  "app/scripts/launch.mjs", "app/scripts/test-runner.mjs", "app/scripts/test-ultra.mjs", "app/public/app.js", "app/public/pdf.js"];
 for (const relative of code) {
   const checked = spawnSync(process.execPath, ["--check", path.join(REPO_ROOT, relative)], { encoding: "utf8" });
   assert.equal(checked.status, 0, `${relative}: ${checked.stderr}`);
@@ -40,4 +40,5 @@ assert.ok(JSON.parse(fs.readFileSync(replay, "utf8")).events.length > 0);
 const verdict = path.join(REPO_ROOT, "sessions/2026-10-09-example-take-the-seed/verdict.json");
 assert.ok(JSON.parse(fs.readFileSync(verdict, "utf8")).call);
 await import("./test-runner.mjs");
+await import("./test-ultra.mjs");
 console.log(`Offline checks passed: ${code.length} JavaScript files, ${roster.length} advisors, assets, and a saved council.`);

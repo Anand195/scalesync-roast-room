@@ -28,7 +28,8 @@ function send(res, code, body, type = "application/json") {
 
 async function readJson(req) {
   let raw = "";
-  for await (const c of req) { raw += c; if (raw.length > 1e5) throw new Error("body too large"); }
+  let bytes = 0;
+  for await (const c of req) { bytes += c.length; if (bytes > 28 * 1024 * 1024) throw new Error("Request exceeds the 20 MB attachment limit."); raw += c; }
   return raw ? JSON.parse(raw) : {};
 }
 
@@ -51,15 +52,16 @@ const server = http.createServer(async (req, res) => {
       if (origin && !/^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) return send(res, 403, { error: "Local requests only." });
       if (RUNNER === "viewer") return send(res, 403, { error: "This room is a viewer. Set COUNCIL_RUNNER=claude, codex, or api to ask here." });
       if ((running && getSession(running)?.status === "running") || runningRequestId()) return send(res, 409, { error: "A council is already in session. Wait for its verdict." });
-      const { prompt, mode, source, model, effort } = await readJson(req);
+      const { prompt, mode, source, model, effort, attachments, parentId } = await readJson(req);
       if (typeof prompt !== "string" || prompt.trim().length < 10) return send(res, 400, { error: "Give the council a real decision (at least a sentence)." });
       if (RUNNER === "codex" || RUNNER === "claude") {
         try {
-          const s = startLocalCouncil(prompt, mode, typeof source === "string" ? source.slice(0, 30) : "room", RUNNER, { model, effort });
+          const s = startLocalCouncil(prompt, mode, typeof source === "string" ? source.slice(0, 30) : "room", RUNNER, { model, effort, attachments, parentId });
           return send(res, 200, { id: s.id, status: s.status });
         } catch (e) { return send(res, 400, { error: e.message }); }
       }
-      const s = startCouncil(prompt.trim().slice(0, 4000), mode === "quick" ? "quick" : "full");
+      if ((attachments && attachments.length) || parentId) return send(res, 400, { error: "Attachments and threads require a Claude Code or Codex CLI runner." });
+      const s = startCouncil(prompt.trim().slice(0, 4000), ["quick", "ultra"].includes(mode) ? mode : "full");
       running = s.id;
       return send(res, 200, { id: s.id, status: s.status });
     }
@@ -78,7 +80,8 @@ const server = http.createServer(async (req, res) => {
       for (const r of listRequests()) {
         const old = byId.get(r.id) || {};
         byId.set(r.id, { ...old, id: r.id, title: old.title || r.prompt.slice(0, 60), prompt: r.prompt,
-          mode: r.mode, status: r.status, source: r.source, runner: r.runner, model: r.model, effort: r.effort, error: r.error });
+          mode: r.mode, status: r.status, source: r.source, runner: r.runner, model: r.model, effort: r.effort,
+          threadId: r.threadId || r.id, parentId: r.parentId || null, turn: r.turn || 1, attachments: r.attachments || [], error: r.error });
       }
       const all = [...byId.values()].sort((a, b) => (a.id < b.id ? 1 : -1));
       const apiRunning = running && getSession(running)?.status === "running" ? running : null;
@@ -106,7 +109,9 @@ const server = http.createServer(async (req, res) => {
       if (!r) return send(res, 404, { error: "not found" });
       const verdictFile = path.join(SESSIONS_DIR, id, "verdict.md");
       const answerFile = path.join(SESSIONS_DIR, id, "answer.md");
+      const planFile = path.join(SESSIONS_DIR, id, "action-plan.md");
       return send(res, 200, { ...r, verdict: fs.existsSync(verdictFile) ? fs.readFileSync(verdictFile, "utf8") : null,
+        actionPlan: fs.existsSync(planFile) ? fs.readFileSync(planFile, "utf8") : null,
         answer: fs.existsSync(answerFile) ? fs.readFileSync(answerFile, "utf8") : null });
     }
     if (p.startsWith("/api/sessions/")) {
@@ -115,7 +120,7 @@ const server = http.createServer(async (req, res) => {
       const r = getRequest(id);
       const j = loadSaved(id) || (x && { id, title: x.title, mode: x.mode, status: x.status, events: x.events }) ||
         (r && { id, title: r.prompt.slice(0, 60), prompt: r.prompt, mode: r.mode, status: r.status, error: r.error, events: [] });
-      return j ? send(res, 200, j) : send(res, 404, { error: "not found" });
+      return j ? send(res, 200, { ...j, request: r || null }) : send(res, 404, { error: "not found" });
     }
     // static
     const file = path.normalize(path.join(PUBLIC, p === "/" ? "index.html" : p));

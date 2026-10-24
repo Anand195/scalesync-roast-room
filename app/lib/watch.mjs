@@ -67,7 +67,7 @@ function normalizeSetup(c) {
   const wl = Array.isArray(c.weights) ? c.weights : Object.entries(c.weights || {}).map(([seat, w]) => (typeof w === "number" ? { seat, weight: w } : { seat, ...w }));
   for (const w of wl) { const k = seatKey(w.seat); if (k) weights[k] = { weight: Math.max(1, Math.min(3, Number(w.weight) || 1)), reason: w.reason || "" }; }
   const seats = (c.seats || []).map(seatKey).filter(Boolean);
-  const mode = c.mode === "quick" ? "quick" : "full";
+  const mode = ["quick", "ultra"].includes(c.mode) ? c.mode : "full";
   return {
     title: c.title || "Roast Room", decision: c.decision || "", brief: c.brief || "", mode,
     options, assumptions: c.assumptions || [], weights,
@@ -101,6 +101,11 @@ function readRound(x, r, force) {
     emit(x, "seat_done", { round: r, seat: c.key, text: c.text, parsed, quotes, name: byKey[c.key].name });
   }
   const have = st.seats.filter((k) => st.cards[r][k]).length;
+  if (st.mode === "ultra" && force && have !== 9) {
+    emit(x, "error", { error: `Ultra Round ${r} has ${have} of 9 required seat cards.` });
+    finish(x, "error");
+    return false;
+  }
   if (have === st.seats.length || (force && have > 0)) {
     st.scores[r] = optionScores(st, r);
     emit(x, "round_done", { round: r, scores: st.scores[r] });
@@ -113,11 +118,22 @@ function sync(x) {
   const f = (n) => path.join(x.dir, n);
   const has = (n) => fs.existsSync(f(n));
   const st = x.st;
+  const request = readJson(f("request.json"));
+  if (request && ["error", "interrupted", "cancelled"].includes(request.status)) {
+    emit(x, "error", { error: request.error || "The council stopped before completing its files." });
+    finish(x, request.status);
+    return;
+  }
 
   if (x.step === "setup") {
     const c = readJson(f("council.json"));
     if (!c) return;
     Object.assign(st, normalizeSetup(c));
+    if (st.mode === "ultra" && st.seats.length !== 9) {
+      emit(x, "error", { error: `Ultra requires exactly 9 distinct seats; council.json has ${st.seats.length}.` });
+      finish(x, "error");
+      return;
+    }
     x.title = st.title;
     x.mode = st.mode;
     emit(x, "phase", { phase: "setup", label: "The Chair is reading your question", at: mtime(f("council.json")) });
@@ -160,12 +176,28 @@ function sync(x) {
     if (st.mode === "quick" && has("verdict.json") && !has("round-3.md")) {
       emit(x, "phase", { phase: "skip3", label: "Quick mode: the vote round is skipped", at: mtime(f("verdict.json")) });
     } else if (!readRound(x, 3, has("verdict.json"))) return;
-    emit(x, "phase", { phase: "verdict", label: "The Chair is writing the verdict", at: mtime(f("verdict.json")) });
+    if (st.mode === "ultra") {
+      startRound(x, 4, "Round 4: stress testing the resolution", mtime(f("round-3.md")));
+      x.step = "r4";
+    } else {
+      emit(x, "phase", { phase: "verdict", label: "The Chair is writing the verdict", at: mtime(f("verdict.json")) });
+      x.step = "verdict";
+    }
+  }
+  if (x.step === "r4") {
+    if (!readRound(x, 4, has("round-5.md"))) return;
+    startRound(x, 5, "Round 5: final vote", mtime(f("round-4.md")));
+    x.step = "r5";
+  }
+  if (x.step === "r5") {
+    if (!readRound(x, 5, has("verdict.json"))) return;
+    emit(x, "phase", { phase: "verdict", label: "The Chair is writing the verdict", at: mtime(f("round-5.md")) });
     x.step = "verdict";
   }
   if (x.step === "verdict") {
     const v = readJson(f("verdict.json"));
     if (!v) return;
+    if (request?.schemaVersion === 2 && !has("action-plan.md")) return;
     const { last, finalScores, recommended, spreadF, confidence, support, votes } = finalNumbers(st);
     const verdict = {
       label: v.label || "RESHAPE", call: v.call || "", override_note: v.override_note || "",
@@ -175,7 +207,7 @@ function sync(x) {
       cheapest_test: v.cheapest_test || "", kill_criteria: v.kill_criteria || "", revisit: v.revisit || "",
       recommended: v.recommended || recommended, scores: finalScores, spread: spreadF, confidence, support, votes, disclaimer: DISCLAIMER,
     };
-    emit(x, "verdict", { verdict, seats: verdictSeats(st, last) });
+    emit(x, "verdict", { verdict, seats: verdictSeats(st, last), actionPlan: readText(f("action-plan.md")) });
     x.step = "done";
     finish(x, "done");
   }
@@ -190,7 +222,7 @@ function load(name) {
   let x = live.get(name);
   if (!x) {
     x = { id: name, dir, events: [], subs: new Set(), status: "running", started: Date.now(), step: "setup", title: "", mode: "full",
-      st: { cards: { 1: {}, 2: {}, 3: {} }, scores: {}, rounds: [] } };
+      st: { cards: { 1: {}, 2: {}, 3: {}, 4: {}, 5: {} }, scores: {}, rounds: [] } };
     live.set(name, x);
   }
   if (x.status === "running") {
