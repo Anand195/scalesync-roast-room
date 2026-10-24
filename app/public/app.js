@@ -101,6 +101,8 @@ const state = {
 async function boot() {
   const r = await refreshSeats();
   state.runner = r.runner;
+  state.runnerOptions = r.runnerOptions;
+  configureRunner(r);
   $("#runnerNote").textContent = r.runner === "codex" || r.runner === "claude"
     ? `Your question and council files are saved locally. This room uses the signed-in ${r.runner === "claude" ? "Claude Code" : "Codex CLI"}.`
     : r.runner === "api"
@@ -116,12 +118,32 @@ async function boot() {
   typeIn($("#composer h2"));
   typeIn($("#waiting h2"));
   const ss = await fetch("/api/sessions").then((x) => x.json());
+  if (ss.pending) { state.activeRequestId = ss.pending; $("#cancelBtn").hidden = false; }
   if (ss.running) attach(ss.running);
   else if (ss.live) attach(ss.live);
   else if (ss.pending) showPending(ss.pending);
   refreshUsage();
   setInterval(watchForLive, 2500);
   setInterval(tickWait, 1000);
+}
+
+function configureRunner(info) {
+  const options = info.runnerOptions;
+  $("#providerBadge").textContent = options?.provider || (info.runner === "api" ? "Anthropic API" : "Viewer mode");
+  $("#runnerControls").hidden = !options;
+  if (!options) return;
+  $("#modelSelect").innerHTML = options.models.map((m) => `<option value="${esc(m.id)}">${esc(m.label)}</option>`).join("");
+  $("#modelSelect").addEventListener("change", updateEfforts);
+  updateEfforts();
+}
+
+function updateEfforts() {
+  const selected = state.runnerOptions?.models.find((m) => m.id === $("#modelSelect").value);
+  const prior = $("#effortSelect").value;
+  const levels = selected?.efforts || [];
+  $("#effortSelect").innerHTML = '<option value="">CLI default</option>' +
+    levels.map((level) => `<option value="${esc(level)}">${esc(level)}</option>`).join("");
+  if (levels.includes(prior)) $("#effortSelect").value = prior;
 }
 
 // The roster (every seat, plus the default board) comes from the skill's roster.json.
@@ -139,8 +161,34 @@ async function refreshSeats() {
 const seenLive = new Set();
 async function watchForLive() {
   const ss = await fetch("/api/sessions").then((x) => x.json()).catch(() => null);
+  if (!state.activeRequestId && ss?.pending && (state.runner === "claude" || state.runner === "codex")) {
+    state.activeRequestId = ss.pending;
+    $("#cancelBtn").hidden = false;
+    $("#convene").disabled = true;
+  }
+  const activeRequest = state.activeRequestId
+    ? await fetch(`/api/requests/${encodeURIComponent(state.activeRequestId)}`).then((x) => x.json()).catch(() => null) : null;
+  if (activeRequest?.runner && activeRequest.runner !== state.runner) {
+    state.activeRequestId = null;
+    $("#cancelBtn").hidden = true;
+    $("#convene").disabled = false;
+  }
+  if (state.activeRequestId && activeRequest && activeRequest.status !== "running") {
+    const finishedId = state.activeRequestId;
+    state.activeRequestId = null;
+    $("#cancelBtn").hidden = true;
+    if (activeRequest.status === "cancelled") {
+      seenLive.add(finishedId);
+      state.pendingId = null;
+      reset();
+      $("#launchStatus").hidden = false;
+      $("#launchStatus").textContent = "Council cancelled. Your question remains in Past sessions.";
+      return;
+    }
+  }
   if (state.pendingId) {
-    const request = await fetch(`/api/requests/${encodeURIComponent(state.pendingId)}`).then((x) => x.json()).catch(() => null);
+    const request = activeRequest?.id === state.pendingId ? activeRequest
+      : await fetch(`/api/requests/${encodeURIComponent(state.pendingId)}`).then((x) => x.json()).catch(() => null);
     if (request?.status === "error" || request?.status === "interrupted") {
       $("#launchStatus").textContent = request.error || "The council stopped before writing a verdict.";
       $("#convene").disabled = false;
@@ -162,6 +210,8 @@ async function watchForLive() {
 
 function showPending(id) {
   state.pendingId = id;
+  state.activeRequestId = id;
+  $("#cancelBtn").hidden = false;
   $("#convene").disabled = true;
   $("#launchStatus").hidden = false;
   $("#launchStatus").textContent = "Question saved. The Chair is preparing the council. It will appear here when the first files are ready.";
@@ -264,13 +314,32 @@ function moveSpot(key) {
 }
 
 function bindUI() {
+  $("#cancelBtn").addEventListener("click", async () => {
+    const id = state.activeRequestId;
+    if (!id) return;
+    $("#cancelBtn").disabled = true;
+    try {
+      const response = await fetch(`/api/requests/${encodeURIComponent(id)}/cancel`, { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not cancel this council.");
+      seenLive.add(id);
+      state.activeRequestId = null;
+      state.pendingId = null;
+      reset();
+      $("#launchStatus").hidden = false;
+      $("#launchStatus").textContent = "Council cancelled. Your question remains in Past sessions.";
+    } catch (error) { toast(error.message); }
+    finally { $("#cancelBtn").disabled = false; }
+  });
   $("#composer").addEventListener("submit", async (e) => {
     e.preventDefault();
     const prompt = $("#prompt").value.trim();
     if (prompt.length < 10) return toast("Give the council a real decision, at least a sentence.");
     const mode = $('input[name="mode"]:checked').value;
     $("#convene").disabled = true;
-    const r = await fetch("/api/council", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt, mode }) });
+    const model = $("#modelSelect").value;
+    const effort = $("#effortSelect").value;
+    const r = await fetch("/api/council", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt, mode, model, effort }) });
     const j = await r.json();
     $("#convene").disabled = false;
     if (!r.ok) return toast(j.error || "Could not start the council.");
@@ -356,7 +425,8 @@ function reset() {
   $("#topic").hidden = true;
   $("#composer").hidden = state.runner === "viewer";
   $("#waiting").hidden = state.runner !== "viewer";
-  $("#convene").disabled = Boolean(state.pendingId);
+  $("#convene").disabled = Boolean(state.activeRequestId);
+  $("#cancelBtn").hidden = !state.activeRequestId;
   $("#launchStatus").hidden = !state.pendingId;
   if (!state.pendingId) $("#launchStatus").textContent = "";
   $("#caption").hidden = true;
@@ -748,6 +818,10 @@ function labelClass(l) { return /DON'T/.test(l) ? "dont" : /RESHAPE/.test(l) ? "
 function onVerdict(ev) {
   const v = ev.verdict;
   state.verdict = ev;
+  if (state.activeRequestId === state.session) {
+    state.activeRequestId = null;
+    $("#cancelBtn").hidden = true;
+  }
   setStep("verdict");
   setSpeaker(null);
   $("#caption").hidden = true;
@@ -809,7 +883,7 @@ function onVerdict(ev) {
 async function openHistory() {
   const { sessions } = await fetch("/api/sessions").then((x) => x.json());
   $("#historyList").innerHTML = sessions.length
-    ? sessions.map((s) => `<li><button data-id="${esc(s.id)}"><b>${esc(s.title)}</b><small>${esc(s.id.slice(0, 10))} · ${esc(s.mode)}${s.runner ? ` · ${esc(s.runner)}` : ""} · ${esc(s.status === "error" ? "failed" : s.status)}</small>${s.prompt ? `<span class="history-question">${esc(s.prompt)}</span>` : ""}</button>${s.status === "done" ? `<button class="pdf" type="button" data-pdf="${esc(s.id)}" title="Download the verdict as a PDF">PDF</button>` : ""}</li>`).join("")
+    ? sessions.map((s) => `<li><button data-id="${esc(s.id)}"><b>${esc(s.title)}</b><small>${esc(s.id.slice(0, 10))} · ${esc(s.mode)}${s.runner ? ` · ${esc(s.runner)}` : ""}${s.model ? ` · ${esc(s.model)}` : ""}${s.effort ? ` · ${esc(s.effort)} effort` : ""} · ${esc(s.status === "error" ? "failed" : s.status)}</small>${s.prompt ? `<span class="history-question">${esc(s.prompt)}</span>` : ""}</button>${s.status === "done" ? `<button class="pdf" type="button" data-pdf="${esc(s.id)}" title="Download the verdict as a PDF">PDF</button>` : ""}</li>`).join("")
     : '<li class="muted">No sessions yet. Convene the council once and it shows up here.</li>';
   $$("#historyList button[data-id]").forEach((b) => b.addEventListener("click", () => { $("#historyDialog").close(); replay(b.dataset.id); }));
   $("#historyDialog").showModal();

@@ -62,6 +62,9 @@ button { font: inherit; cursor: pointer; }
 .stepper li.active { color: var(--ink); }
 .stepper li.active::before { background: var(--accent); box-shadow: 0 0 0 3px rgba(56, 189, 248, .25); }
 .top-actions { display: flex; align-items: center; gap: 10px; }
+.provider-badge { border: 1px solid rgba(0, 164, 190, .55); color: #8ceaff; background: rgba(0, 164, 190, .12); padding: 6px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.cancel-council { border-color: #e37878; color: #ffb4b4; }
+.cancel-council:hover { border-color: #ffb4b4; color: #fff; }
 .usage { font-size: 12px; color: var(--ink-mute); }
 .ghost {
   background: transparent; border: 1px solid var(--hairline-strong); color: var(--ink-soft);
@@ -213,6 +216,10 @@ button { font: inherit; cursor: pointer; }
   border-radius: 999px; padding: 4px 11px; font-size: 12px; transition: border-color .2s, color .2s;
 }
 .samples button:hover { border-color: var(--accent); color: var(--ink); }
+.runner-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; text-align: left; }
+.runner-controls label { display: grid; gap: 4px; color: var(--ink-soft); font-size: 12px; font-weight: 600; }
+.runner-controls select { width: 100%; min-width: 0; border: 1px solid var(--hairline-strong); border-radius: 9px; background: #171d27; color: var(--ink); padding: 8px 10px; font: 13px var(--font-text); }
+.runner-controls select:focus-visible { outline: 2px solid var(--accent); }
 .composer-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .mode { display: flex; gap: 6px; }
 .mode label { cursor: pointer; }
@@ -487,6 +494,7 @@ button { font: inherit; cursor: pointer; }
   .top-actions { margin-left: auto; }
   .top-actions .ghost { padding: 6px 11px; font-size: 12.5px; }
 }
+@media (max-width: 480px) { .runner-controls { grid-template-columns: 1fr; } .top-actions { gap: 5px; } .provider-badge { padding: 5px 7px; } }
 .typein .wd { display: inline-block; white-space: nowrap; }
 @media (max-width: 1220px) {
   .topbar { flex-wrap: wrap; row-gap: 8px; }

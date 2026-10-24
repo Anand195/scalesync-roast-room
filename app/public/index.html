@@ -26,7 +26,9 @@
       <li data-step="verdict">Verdict</li>
     </ol>
     <div class="top-actions">
+      <span class="provider-badge" id="providerBadge" aria-label="Current provider">Connecting…</span>
       <span class="usage" id="usage" title="Tokens used by this app since it started"></span>
+      <button class="ghost cancel-council" id="cancelBtn" type="button" hidden>Cancel council</button>
       <button class="ghost" id="guideBtn" type="button">How it works</button>
       <button class="ghost" id="historyBtn" type="button">Past sessions</button>
       <button class="ghost" id="newBtn" type="button" hidden>New question</button>
@@ -64,6 +66,10 @@
             <h2 data-type>What decision do you need help with?</h2>
             <textarea id="prompt" rows="3" placeholder="Give them the decision, your options, a few numbers (revenue, cash, team), and which way you're leaning." required minlength="10"></textarea>
             <div class="samples" id="samples"></div>
+            <div class="runner-controls" id="runnerControls" hidden>
+              <label>Model <select id="modelSelect" aria-label="Model"></select></label>
+              <label>Effort <select id="effortSelect" aria-label="Reasoning effort"></select></label>
+            </div>
             <div class="composer-row">
               <div class="mode" role="radiogroup" aria-label="Council size">
                 <label><input type="radio" name="mode" value="full" checked><span>Full council <small>7 seats, 3 rounds</small></span></label>

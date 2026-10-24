@@ -33,7 +33,8 @@ https://github.com/Anand195/scalesync-roast-room.
 
 Goal: I can type a new business decision into the local Roast Room webpage,
 have it processed by my signed-in Claude Code or Codex CLI in the background,
-watch the council, and find the question and verdict in Past sessions.
+choose that provider's model and effort, cancel a run if needed, watch the
+council, and find the question and verdict in Past sessions.
 
 1. Check that Git and Node.js 20+ are installed. Check `claude auth status`
    and `codex login status`. Use signed-in Claude Code if available;
@@ -50,10 +51,13 @@ watch the council, and find the question and verdict in Past sessions.
 4. Verify `http://localhost:4730/api/health` reports this repository and
    the chosen runner. Verify the homepage loads. Open
    `http://localhost:4730` in my browser.
-5. Tell me the exact live local URL and selected runner. Explain that I
-   enter the decision, options, numbers, constraints, deadline, and lean;
-   choose Quick or Full; click “Convene the council”; watch the result;
-   then use Past sessions to replay or download the PDF.
+5. Verify the page badge identifies Claude Code or Codex CLI. Verify Model
+   and Effort selectors show that runner's choices. Tell me the exact live
+   local URL and runner. Explain that I enter the decision, options, numbers,
+   constraints, deadline, and lean; choose model, effort, Quick or Full;
+   click “Convene the council”; then watch the result. Explain that Cancel
+   council stops the running CLI while keeping the question in Past sessions,
+   where completed runs can be replayed or downloaded as PDFs.
 6. If anything fails, read `sessions/room-server.log` and the relevant
    `sessions/<id>/runner.log`, fix the actual issue, retry, and report what
    you verified. Do not claim a council was tested unless one completed.
@@ -64,11 +68,12 @@ claim it is a public hosted service or expose it to the internet.
 
 ## Ask a question in the browser
 
-1. Open [http://localhost:4730](http://localhost:4730). The page displays the active runner.
+1. Open [http://localhost:4730](http://localhost:4730). The badge identifies the active provider. The provider is selected when the server starts; use `npm run launch -- --runner claude` or `--runner codex` to choose another one after stopping the current server.
 2. Write one decision: options, business context, revenue/cash/team if relevant, constraints, success target, deadline, and your current lean. Missing facts are marked as assumptions because the background council cannot pause to ask you.
-3. Choose **Quick** (four advisors, usually two rounds) or **Full** (about five to seven advisors, three rounds) and click **Convene the council**. One browser-submitted council runs at a time. A run may take several minutes and consumes your CLI plan usage.
-4. Watch the cards and verdict appear. Use **Past sessions** to replay a saved run or download its PDF. The exact question is saved in `sessions/<id>/request.json`; working notes, `verdict.md`, `verdict.json`, and runner output are in the same local folder. Sessions are ignored by Git.
-5. Click **New question** for another decision. This is a question-to-verdict workflow. It does not yet provide a continuous chat thread or interactive follow-up within one council. To revisit a verdict, submit a new question with the earlier facts and what changed.
+3. Choose **Model** and **Effort**, or leave either at **CLI default**. Claude Code offers its current model aliases. Codex reads its local model cache to list visible models and each model's supported efforts; before that cache exists, the room offers built-in suggestions. Availability still depends on your CLI login and plan. These settings apply to the new council, not a run already in progress.
+4. Choose **Quick** (four advisors, usually two rounds) or **Full** (about five to seven advisors, three rounds) and click **Convene the council**. One local CLI council runs at a time. A run may take several minutes and consumes your CLI plan usage.
+5. Watch the cards and verdict appear. **Cancel council** stops the active Claude or Codex process, including its child processes on macOS/Linux. The cancelled question remains in **Past sessions**. Completed sessions can be replayed or downloaded as PDFs. The exact question, provider, model, effort, and status are saved in `sessions/<id>/request.json`; working notes, `verdict.md`, `verdict.json`, and runner output are in the same local folder. Sessions are ignored by Git.
+6. Click **New question** for another decision. This is a question-to-verdict workflow. It does not yet provide a continuous chat thread or interactive follow-up within one council. To revisit a verdict, submit a new question with the earlier facts and what changed.
 
 Example question:
 
@@ -76,7 +81,7 @@ Example question:
 
 ## Use it from desktop AI chats
 
-The dependency-free local MCP server `app/mcp.mjs` exposes `roast_room_start`, `roast_room_wait`, `roast_room_status`, `roast_room_history`, and `roast_room_result`. A desktop chat can submit a question and read the same local result. Configure its stdio command as your Node executable followed by the absolute path to `app/mcp.mjs`. Keep the repository's `.env` set to `COUNCIL_RUNNER=claude` or `codex`. The MCP server starts the room if it is stopped.
+The dependency-free local MCP server `app/mcp.mjs` exposes `roast_room_start`, `roast_room_cancel`, `roast_room_wait`, `roast_room_status`, `roast_room_history`, and `roast_room_result`. A desktop chat can submit a question with optional model and effort, cancel its session, and read the same local result. Configure its stdio command as your Node executable followed by the absolute path to `app/mcp.mjs`. Keep the repository's `.env` set to `COUNCIL_RUNNER=claude` or `codex`. The MCP server starts the room if it is stopped.
 
 For Codex CLI/Desktop:
 
@@ -112,6 +117,7 @@ The Git remote named `upstream` points to [nateherkai/roast-room](https://github
 | Login check fails | Run `claude auth status` or `codex login status` in your own terminal. Sign in with `claude auth login` or `codex login`. |
 | Port 4730 is occupied | Run `curl http://localhost:4730/api/health`; stop the old instance only after identifying it. |
 | Page starts but council does not | Open Past sessions, then check `sessions/<id>/request.json` and `runner.log`. The question remains saved even if the run fails. |
+| Selected model or effort is rejected | Try **CLI default**, confirm the model is available to your account, and update the relevant CLI. Codex choices come from its local model cache when present. |
 | Room not ready | Read `sessions/room-server.log`; verify Node 20+ and the selected `COUNCIL_RUNNER`. |
 | Desktop tools absent | Check the MCP command's absolute paths and restart Claude Desktop or Codex Desktop. |
 

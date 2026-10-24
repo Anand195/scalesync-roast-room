@@ -7,10 +7,12 @@ import { APP_ROOT, SESSIONS_DIR, env } from "./lib/env.mjs";
 const BASE = "http://127.0.0.1:4730";
 const tools = [
   { name: "roast_room_start", description: "Save a business decision and start a Roast Room council. Returns a session ID and the local room URL. The council runs asynchronously; call roast_room_wait until it finishes, then report the verdict.",
-    inputSchema: { type: "object", properties: { question: { type: "string", description: "The decision, options, numbers, deadline, and leaning. At least one sentence." }, mode: { type: "string", enum: ["quick", "full"], description: "Quick uses four advisors; full uses the complete council." } }, required: ["question"] } },
-  { name: "roast_room_status", description: "Check whether a saved Roast Room question is running, done, or failed.",
+    inputSchema: { type: "object", properties: { question: { type: "string", description: "The decision, options, numbers, deadline, and leaning. At least one sentence." }, mode: { type: "string", enum: ["quick", "full"], description: "Quick uses four advisors; full uses the complete council." }, model: { type: "string", description: "Optional model from this room's provider catalog. Omit to use the CLI default." }, effort: { type: "string", description: "Optional reasoning effort supported by the selected model. Omit to use the CLI default." } }, required: ["question"] } },
+  { name: "roast_room_cancel", description: "Stop a running Claude Code or Codex CLI council immediately. The saved question remains in history.",
     inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
-  { name: "roast_room_wait", description: "Wait up to 50 seconds for a running council. Repeat until it returns done or failed; the user can watch the room meanwhile.",
+  { name: "roast_room_status", description: "Check whether a saved Roast Room question is running, done, cancelled, or failed.",
+    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
+  { name: "roast_room_wait", description: "Wait up to 50 seconds for a running council. Repeat until it returns done, cancelled, or failed; the user can watch the room meanwhile.",
     inputSchema: { type: "object", properties: { id: { type: "string" }, seconds: { type: "integer", minimum: 1, maximum: 50 } }, required: ["id"] } },
   { name: "roast_room_history", description: "List saved Roast Room questions and council sessions from every entry point.",
     inputSchema: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 50 } } } },
@@ -61,12 +63,16 @@ async function call(name, args) {
   if (name === "roast_room_start") {
     if (typeof args.question !== "string" || args.question.trim().length < 10) throw new Error("Give the council a decision in at least one sentence.");
     const result = await request("/api/council", { method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ prompt: args.question, mode: args.mode || "full", source: process.env.ROAST_ROOM_CLIENT || "desktop" }) });
+      body: JSON.stringify({ prompt: args.question, mode: args.mode || "full", model: args.model || "", effort: args.effort || "", source: process.env.ROAST_ROOM_CLIENT || "desktop" }) });
     return { ...result, room: BASE, note: "The question is saved. The council runs asynchronously; check status or open the room." };
+  }
+  if (name === "roast_room_cancel") {
+    const result = await request(`/api/requests/${encodeURIComponent(args.id)}/cancel`, { method: "POST" });
+    return { ...result, room: BASE, note: "The council was cancelled. Its question remains saved." };
   }
   if (name === "roast_room_status") {
     const r = await request(`/api/requests/${encodeURIComponent(args.id)}`);
-    return { id: r.id, status: r.status, question: r.prompt, mode: r.mode, source: r.source, error: r.error,
+    return { id: r.id, status: r.status, question: r.prompt, mode: r.mode, source: r.source, runner: r.runner, model: r.model, effort: r.effort, error: r.error,
       room: BASE, resultAvailable: Boolean(r.verdict) };
   }
   if (name === "roast_room_wait") {
@@ -83,11 +89,12 @@ async function call(name, args) {
     const r = await request("/api/sessions");
     return r.sessions.slice(0, Math.min(50, Math.max(1, Number(args.limit) || 20)))
       .map((s) => ({ id: s.id, question: s.prompt || s.title, status: s.status, mode: s.mode,
-        runner: s.runner || null, source: s.source || "skill" }));
+        runner: s.runner || null, model: s.model || null, effort: s.effort || null, source: s.source || "skill" }));
   }
   if (name === "roast_room_result") {
     const r = await request(`/api/requests/${encodeURIComponent(args.id)}`);
-    return { id: r.id, status: r.status, question: r.prompt, verdict: r.verdict, answer: r.answer, error: r.error, room: BASE };
+    return { id: r.id, status: r.status, question: r.prompt, runner: r.runner, model: r.model, effort: r.effort,
+      verdict: r.verdict, answer: r.answer, error: r.error, room: BASE };
   }
   throw new Error(`Unknown tool: ${name}`);
 }

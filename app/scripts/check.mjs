@@ -5,15 +5,20 @@ import { spawnSync } from "node:child_process";
 import { REPO_ROOT } from "../lib/env.mjs";
 import { loadRoster, parseOptionScores } from "../lib/seats.mjs";
 import { finalNumbers } from "../lib/council.mjs";
+import { runnerOptions, validateRunnerSelection } from "../lib/runner-options.mjs";
 
-const code = ["app/server.mjs", "app/mcp.mjs", "app/lib/local-runner.mjs", "app/lib/watch.mjs",
-  "app/scripts/launch.mjs", "app/public/app.js", "app/public/pdf.js"];
+const code = ["app/server.mjs", "app/mcp.mjs", "app/lib/local-runner.mjs", "app/lib/runner-options.mjs", "app/lib/watch.mjs",
+  "app/scripts/launch.mjs", "app/scripts/test-runner.mjs", "app/public/app.js", "app/public/pdf.js"];
 for (const relative of code) {
   const checked = spawnSync(process.execPath, ["--check", path.join(REPO_ROOT, relative)], { encoding: "utf8" });
   assert.equal(checked.status, 0, `${relative}: ${checked.stderr}`);
 }
 
 const roster = loadRoster();
+assert.equal(validateRunnerSelection("claude", "sonnet", "high").model, "sonnet");
+assert.ok(runnerOptions("codex").models.length > 1, "Codex must show model choices");
+assert.throws(() => validateRunnerSelection("codex", "unsupported-model", "high"), /not available/);
+assert.throws(() => validateRunnerSelection("claude", "sonnet", "ultra"), /not available/);
 assert.deepEqual(parseOptionScores("OPTION SCORES: [A] 3/10 · [B] 2/10 · [C] 8/10", ["A", "B", "C"]),
   { A: 3, B: 2, C: 8 }, "Bracketed CLI card scores should render in the room");
 const quick = { rounds: [2, 3], seats: ["martell"], weights: { martell: { weight: 1 } },
@@ -34,4 +39,5 @@ const replay = path.join(REPO_ROOT, "sessions/2026-10-10-example-first-sales-hir
 assert.ok(JSON.parse(fs.readFileSync(replay, "utf8")).events.length > 0);
 const verdict = path.join(REPO_ROOT, "sessions/2026-10-09-example-take-the-seed/verdict.json");
 assert.ok(JSON.parse(fs.readFileSync(verdict, "utf8")).call);
+await import("./test-runner.mjs");
 console.log(`Offline checks passed: ${code.length} JavaScript files, ${roster.length} advisors, assets, and a saved council.`);

@@ -1,6 +1,6 @@
 {
   "name": "roast-room",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "ScaleSync edition of Roast Room: ask a business decision in a local web room and run a simulated advisor council with Claude Code or Codex CLI.",
   "type": "module",

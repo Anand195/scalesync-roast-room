@@ -6,7 +6,8 @@ import { loadRoster, BOARD } from "./lib/seats.mjs";
 import { startCouncil, getSession, subscribe, listSaved, loadSaved, MODELS } from "./lib/council.mjs";
 import { usage } from "./lib/anthropic.mjs";
 import * as watch from "./lib/watch.mjs";
-import { startLocalCouncil, getRequest, listRequests, runningRequestId } from "./lib/local-runner.mjs";
+import { startLocalCouncil, cancelLocalCouncil, getRequest, listRequests, runningRequestId } from "./lib/local-runner.mjs";
+import { runnerOptions } from "./lib/runner-options.mjs";
 
 const PORT = Number(process.env.PORT) || 4730;
 const PUBLIC = path.join(APP_ROOT, "public");
@@ -42,7 +43,7 @@ const server = http.createServer(async (req, res) => {
       const seats = loadRoster().map((s) => ({ ...s, portraits: Object.fromEntries(["base", "open", "mid", "blink"].map((sh) => [sh, frame(s.key, sh)]).filter(([, f]) => f).map(([sh, f]) => [sh, `/portraits/${f}`])) }));
       return send(res, 200, { seats, board: BOARD, models: RUNNER === "codex" ? { seat: "Codex CLI", chair: "Codex CLI" }
         : RUNNER === "claude" ? { seat: "Claude Code", chair: "Claude Code" } : MODELS,
-        runner: RUNNER, hasKey: Boolean(env("ANTHROPIC_API_KEY")) });
+        runner: RUNNER, runnerOptions: runnerOptions(RUNNER), hasKey: Boolean(env("ANTHROPIC_API_KEY")) });
     }
     if (p === "/api/usage") return send(res, 200, usage);
     if (p === "/api/council" && req.method === "POST") {
@@ -50,11 +51,11 @@ const server = http.createServer(async (req, res) => {
       if (origin && !/^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) return send(res, 403, { error: "Local requests only." });
       if (RUNNER === "viewer") return send(res, 403, { error: "This room is a viewer. Set COUNCIL_RUNNER=claude, codex, or api to ask here." });
       if ((running && getSession(running)?.status === "running") || runningRequestId()) return send(res, 409, { error: "A council is already in session. Wait for its verdict." });
-      const { prompt, mode, source } = await readJson(req);
+      const { prompt, mode, source, model, effort } = await readJson(req);
       if (typeof prompt !== "string" || prompt.trim().length < 10) return send(res, 400, { error: "Give the council a real decision (at least a sentence)." });
       if (RUNNER === "codex" || RUNNER === "claude") {
         try {
-          const s = startLocalCouncil(prompt, mode, typeof source === "string" ? source.slice(0, 30) : "room", RUNNER);
+          const s = startLocalCouncil(prompt, mode, typeof source === "string" ? source.slice(0, 30) : "room", RUNNER, { model, effort });
           return send(res, 200, { id: s.id, status: s.status });
         } catch (e) { return send(res, 400, { error: e.message }); }
       }
@@ -77,11 +78,27 @@ const server = http.createServer(async (req, res) => {
       for (const r of listRequests()) {
         const old = byId.get(r.id) || {};
         byId.set(r.id, { ...old, id: r.id, title: old.title || r.prompt.slice(0, 60), prompt: r.prompt,
-          mode: r.mode, status: r.status, source: r.source, runner: r.runner, error: r.error });
+          mode: r.mode, status: r.status, source: r.source, runner: r.runner, model: r.model, effort: r.effort, error: r.error });
       }
       const all = [...byId.values()].sort((a, b) => (a.id < b.id ? 1 : -1));
       const apiRunning = running && getSession(running)?.status === "running" ? running : null;
-      return send(res, 200, { sessions: all, running: apiRunning, live: watch.runningId(), pending: runningRequestId() });
+      const liveId = watch.runningId();
+      const liveRequest = liveId && getRequest(liveId);
+      const pendingId = runningRequestId();
+      return send(res, 200, { sessions: all, running: apiRunning,
+        live: liveRequest && (liveRequest.status === "cancelled" || (["claude", "codex"].includes(RUNNER) && liveRequest.runner !== RUNNER)) ? null : liveId,
+        pending: pendingId && getRequest(pendingId)?.runner === RUNNER ? pendingId : null });
+    }
+    if (p.startsWith("/api/requests/") && p.endsWith("/cancel") && req.method === "POST") {
+      const origin = req.headers.origin;
+      if (origin && !/^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) return send(res, 403, { error: "Local requests only." });
+      if (RUNNER !== "claude" && RUNNER !== "codex") return send(res, 403, { error: "Cancellation is available for local CLI councils." });
+      const id = decodeURIComponent(p.split("/").at(-2));
+      if (getRequest(id)?.runner !== RUNNER) return send(res, 409, { error: "That council belongs to another provider." });
+      try {
+        const cancelled = cancelLocalCouncil(id);
+        return send(res, 200, { id: cancelled.id, status: cancelled.status });
+      } catch (e) { return send(res, 409, { error: e.message }); }
     }
     if (p.startsWith("/api/requests/")) {
       const id = decodeURIComponent(p.split("/").pop());
